@@ -1,0 +1,10 @@
+MODULE    = chakra.dll
+EXTRADLLFLAGS = -mno-cygwin -Wb,--prefer-native
+RC_SRCS = version.rc
+UNIXLIB   = chakra.so
+IMPORTLIB = chakra
+UNIX_LIBS = -lChakraCore
+
+SOURCES = \
+    chakra.c \
+    unixlib.c
