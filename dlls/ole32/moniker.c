@@ -66,7 +66,7 @@ typedef struct RunningObjectTableImpl
 {
     IRunningObjectTable IRunningObjectTable_iface;
     struct list rot; /* list of ROT entries */
-    CRITICAL_SECTION lock;
+    CRITICAL_SECTION* lock;
 } RunningObjectTableImpl;
 
 /* define the EnumMonikerImpl structure */
@@ -417,9 +417,9 @@ RunningObjectTableImpl_Register(IRunningObjectTable* iface, DWORD flags,
     /* gives a registration identifier to the registered object*/
     *pdwRegister = rot_entry->cookie;
 
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     list_add_tail(&This->rot, &rot_entry->entry);
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
     return hr;
 }
@@ -438,19 +438,19 @@ RunningObjectTableImpl_Revoke( IRunningObjectTable* iface, DWORD dwRegister)
 
     TRACE("%p, %ld.\n", iface, dwRegister);
 
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     LIST_FOR_EACH_ENTRY(rot_entry, &This->rot, struct rot_entry, entry)
     {
         if (rot_entry->cookie == dwRegister)
         {
             list_remove(&rot_entry->entry);
-            LeaveCriticalSection(&This->lock);
+            LeaveCriticalSection(This->lock);
 
             rot_entry_delete(rot_entry);
             return S_OK;
         }
     }
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
     return E_INVALIDARG;
 }
@@ -480,7 +480,7 @@ RunningObjectTableImpl_IsRunning( IRunningObjectTable* iface, IMoniker *pmkObjec
         return hr;
 
     hr = S_FALSE;
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     LIST_FOR_EACH_ENTRY(rot_entry, &This->rot, const struct rot_entry, entry)
     {
         if ((rot_entry->moniker_data->ulCntData == moniker_data->ulCntData) &&
@@ -490,7 +490,7 @@ RunningObjectTableImpl_IsRunning( IRunningObjectTable* iface, IMoniker *pmkObjec
             break;
         }
     }
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
     if (hr == S_FALSE)
         hr = InternalIrotIsRunning(moniker_data);
@@ -533,7 +533,7 @@ RunningObjectTableImpl_GetObject( IRunningObjectTable* iface,
     if (hr != S_OK)
         return hr;
 
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     LIST_FOR_EACH_ENTRY(rot_entry, &This->rot, struct rot_entry, entry)
     {
         if ((rot_entry->moniker_data->ulCntData == moniker_data->ulCntData) &&
@@ -541,7 +541,7 @@ RunningObjectTableImpl_GetObject( IRunningObjectTable* iface,
         {
             IStream *pStream;
             hr = create_stream_on_mip_ro(rot_entry->object, &pStream);
-            LeaveCriticalSection(&This->lock);
+            LeaveCriticalSection(This->lock);
 
             if (hr == S_OK)
             {
@@ -554,7 +554,7 @@ RunningObjectTableImpl_GetObject( IRunningObjectTable* iface,
             return hr;
         }
     }
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
     TRACE("moniker unavailable locally, calling SCM\n");
 
@@ -594,20 +594,20 @@ RunningObjectTableImpl_NoteChangeTime(IRunningObjectTable* iface,
 
     TRACE("%p, %ld, %p.\n", iface, dwRegister, pfiletime);
 
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     LIST_FOR_EACH_ENTRY(rot_entry, &This->rot, struct rot_entry, entry)
     {
         if (rot_entry->cookie == dwRegister)
         {
             rot_entry->last_modified = *pfiletime;
-            LeaveCriticalSection(&This->lock);
+            LeaveCriticalSection(This->lock);
 
             hr = InternalIrotNoteChangeTime(dwRegister, pfiletime);
 
             goto done;
         }
     }
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
 done:
     TRACE("-- %#lx\n", hr);
@@ -645,7 +645,7 @@ RunningObjectTableImpl_GetTimeOfLastChange(IRunningObjectTable* iface,
 
     hr = MK_E_UNAVAILABLE;
 
-    EnterCriticalSection(&This->lock);
+    EnterCriticalSection(This->lock);
     LIST_FOR_EACH_ENTRY(rot_entry, &This->rot, const struct rot_entry, entry)
     {
         if ((rot_entry->moniker_data->ulCntData == moniker_data->ulCntData) &&
@@ -656,7 +656,7 @@ RunningObjectTableImpl_GetTimeOfLastChange(IRunningObjectTable* iface,
             break;
         }
     }
-    LeaveCriticalSection(&This->lock);
+    LeaveCriticalSection(This->lock);
 
     if (hr != S_OK)
         hr = InternalIrotGetTimeOfLastChange(moniker_data, pfiletime);
@@ -707,19 +707,20 @@ static const IRunningObjectTableVtbl VT_RunningObjectTableImpl =
     RunningObjectTableImpl_EnumRunning
 };
 
-static RunningObjectTableImpl rot;
+static RTL_CRITICAL_SECTION IROT_lock;
 
 static RTL_CRITICAL_SECTION_DEBUG critsect_debug =
 {
-    0, 0, &rot.lock,
+    0, 0, &IROT_lock,
     { &critsect_debug.ProcessLocksList, &critsect_debug.ProcessLocksList },
-      0, 0, { (DWORD_PTR)(__FILE__ ": RunningObjectTable_section") }
+      0, 0, { (DWORD_PTR)(__FILE__ ": IROT_lock") }
 };
+static RTL_CRITICAL_SECTION IROT_lock = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 static RunningObjectTableImpl rot =
 {
     .IRunningObjectTable_iface.lpVtbl = &VT_RunningObjectTableImpl,
-    .lock = { &critsect_debug, -1, 0, 0, 0, 0 },
+    .lock = &IROT_lock,
     .rot = LIST_INIT(rot.rot),
 };
 
@@ -751,13 +752,13 @@ void WINAPI DestroyRunningObjectTable(void)
 
     TRACE("\n");
 
-    EnterCriticalSection(&rot.lock);
+    EnterCriticalSection(rot.lock);
     LIST_FOR_EACH_ENTRY_SAFE(rot_entry, cursor2, &rot.rot, struct rot_entry, entry)
     {
         list_remove(&rot_entry->entry);
         rot_entry_delete(rot_entry);
     }
-    LeaveCriticalSection(&rot.lock);
+    LeaveCriticalSection(rot.lock);
 }
 
 static HRESULT get_moniker_for_progid_display_name(LPBC pbc,

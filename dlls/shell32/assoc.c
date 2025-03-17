@@ -1138,6 +1138,25 @@ HRESULT WINAPI SHAssocEnumHandlers(const WCHAR *extra, ASSOC_FILTER filter, IEnu
  */
 HRESULT WINAPI SHAssocEnumHandlersForProtocolByApplication(const WCHAR *protocol, REFIID riid, void **handlers)
 {
-    FIXME("(%s %s %p): stub\n", debugstr_w(protocol), debugstr_guid(riid), handlers);
-    return E_NOTIMPL;
+  struct enumassochandlers *enumassoc;
+  
+      FIXME("(%s %d %p): stub\n", debugstr_w(protocol), debugstr_guid(riid), handlers);
+      
+      if(!IsEqualIID(riid, &IID_IEnumAssocHandlers))
+      {
+          FIXME("Not implemented objects except IID_IEnumAssocHandlers\n");
+          return E_NOTIMPL;
+      }
+      
+      *handlers = NULL;
+  
+      enumassoc = SHAlloc(sizeof(*enumassoc));
+      if (!enumassoc)
+          return E_OUTOFMEMORY;
+  
+      enumassoc->IEnumAssocHandlers_iface.lpVtbl = &enumassochandlersvtbl;
+      enumassoc->ref = 1;
+  
+      *handlers = &enumassoc->IEnumAssocHandlers_iface;
+      return S_OK;
 }

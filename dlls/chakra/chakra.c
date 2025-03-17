@@ -99,7 +99,7 @@ JsErrorCode WINAPI CHAKRA_JsRelease(JsRef ref, unsigned int *count){
     struct JsRelease_params params = {ref,count};
     WINE_UNIX_CALL(unix_JsRelease,&params);
 }
-
+ //TODO!!! do we move to the wstr type decl in the spec file?
 JsErrorCode WINAPI CHAKRA_JsPointerToString(const WCHAR *stringValue, size_t stringLength, JsValueRef *value){
     struct JsPointerToString_params params = {convert_wchar_to_utf8(stringValue), stringLength, value};
     WINE_UNIX_CALL(unix_JsPointerToString,&params);
