@@ -471,13 +471,54 @@ HRESULT WINAPI RoRegisterActivationFactories(HSTRING *classes, PFNGETACTIVATIONF
     return S_OK;
 }
 
+	/***********************************************************************
+	 *               SetRestrictedErrorInfo    (combase.@)
+	 */
+	HRESULT WINAPI SetRestrictedErrorInfo(IRestrictedErrorInfo *info)
+	{
+	    struct tlsdata *tlsdata;
+	    HRESULT hr;
+
+	    TRACE("%p\n", info);
+
+	    if (FAILED(hr = com_get_tlsdata(&tlsdata)))
+	        return hr;
+
+	    if (tlsdata->restricted_error_info)
+	        IRestrictedErrorInfo_Release(tlsdata->restricted_error_info);
+
+	    tlsdata->restricted_error_info = info;
+	    if (info)
+	        IRestrictedErrorInfo_AddRef(info);
+
+	    return S_OK;
+	}
+
 /***********************************************************************
  *      GetRestrictedErrorInfo (combase.@)
  */
 HRESULT WINAPI GetRestrictedErrorInfo(IRestrictedErrorInfo **info)
 {
-    FIXME( "(%p)\n", info );
-    return E_NOTIMPL;
+struct tlsdata *tlsdata;
+HRESULT hr;
+
+TRACE("%p\n", info);
+
+if (!info)
+return E_INVALIDARG;
+
+if (FAILED(hr = com_get_tlsdata(&tlsdata)))
+return hr;
+
+if (!tlsdata->restricted_error_info)
+{
+*info = NULL;
+return S_FALSE;
+}
+
+*info = tlsdata->restricted_error_info;
+tlsdata->restricted_error_info = NULL;
+return S_OK;
 }
 
 /***********************************************************************
