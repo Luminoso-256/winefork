@@ -543,24 +543,14 @@ static DirRef findElement(StorageBaseImpl *storage, DirRef storageEntry,
     LONG cmp;
 
     StorageBaseImpl_ReadDirEntry(storage, currentEntry, data);
-    TRACE("Name Compare: %s vs %s",debugstr_w(name),debugstr_w(data->name));
     cmp = entryNameCmp(name, data->name);
 
     if (cmp == 0){
       /* found it */
-      TRACE("Name compare passed, returning\n");
       break;
     }
-
-    else if (cmp < 0){
-      TRACE("Name compare failed to the left");
-      currentEntry = data->leftChild;
-    }
-
-    else if (cmp > 0){
-      TRACE("Name compare failed to the right");
-      currentEntry = data->rightChild;
-    }
+    else if (cmp < 0) currentEntry = data->leftChild;
+    else if (cmp > 0) currentEntry = data->rightChild;
   }
 
   return currentEntry;
@@ -2379,15 +2369,10 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
   const OLECHAR *pwcsNewName,/* [string][in] */
   DWORD           grfFlags)    /* [in] */
 {
-  FIXME("MoveElementTo::::::: %p, %s, %p, %s, %#lx: stub\n", iface, debugstr_w(pwcsName), pstgDest,
-      debugstr_w(pwcsNewName), grfFlags);
   //according to https://learn.microsoft.com/en-us/windows/win32/api/objidl/nf-objidl-istorage-moveelementto
   //this is supposed to be functionally equivalent to a CopyTo followed by a delete
   StorageBaseImpl* This = impl_from_IStorage(iface);
   STATSTG storageStat;
-
-  //stupid! Wrong! obviously the actual storage is a storage we care about the element we're working with  :(
- // StorageBaseImpl_Stat(iface,&storageStat,STATFLAG_DEFAULT);
 
   DirRef srcRef;
   DirEntry srcEntry;
@@ -2405,14 +2390,9 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
 
   if (srcEntry.stgType == STGTY_STORAGE){
     IStorage* sourceElm = NULL;
-    TRACE("STGY_STORAGE\n");
-    TRACE("Open Storage (looking for %s)\n",debugstr_w(pwcsName));
+   
     hRes = IStorage_OpenStorage(iface,pwcsName,NULL,STGM_READ | STGM_SHARE_EXCLUSIVE,0,0,&sourceElm);
-    if (FAILED(hRes)){
-       TRACE("FAIL!  %#lx\n",hRes);
-       return hRes;
-    }
-    TRACE("made it past opening the source subelement\n");
+    if (FAILED(hRes)) return hRes;
 
     IStorage* destElm = NULL;
 
@@ -2428,18 +2408,15 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
     IStorage_Release(sourceElm);
     IStorage_Release(destElm);
   } else if (srcEntry.stgType = STGTY_STREAM){
-    TRACE("Stream: %s --> %s\n",debugstr_w(pwcsName),debugstr_w(targetName));
     IStream* sourceStream;
+
     hRes = IStorage_OpenStream(iface,pwcsName,NULL,STGM_READ | STGM_SHARE_EXCLUSIVE,0,&sourceStream);
-    if (FAILED(hRes)){ 
-       TRACE("Fail to open source stream: %#lx",hRes);
-      return hRes;
-    }
+    if (FAILED(hRes)) return hRes;
+    
 
     IStream* destStream;
     hRes = IStorage_CreateStream(pstgDest,targetName,STGM_READWRITE | STGM_SHARE_EXCLUSIVE | STGM_CREATE, 0,0,&destStream);
     if (FAILED(hRes)){
-      TRACE("Fail to create dest stream: %#lx",hRes);
       IStream_Release(sourceStream);
       return hRes;
     }
@@ -2447,7 +2424,6 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
     STATSTG strStat;
 
     IStream_Stat(sourceStream,&strStat,STATFLAG_NONAME);
-    TRACE("Stream size: %ld\n",strStat.cbSize);
     IStream_SetSize(destStream,strStat.cbSize);
     hRes = IStream_CopyTo(sourceStream,destStream,strStat.cbSize,NULL,NULL);
   
@@ -2456,11 +2432,6 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
   } else {
      FIXME("MoveElementTo currently unsupported type: %d\n",storageStat.type);
      return E_NOTIMPL;
-  }
-
-  TRACE("storage copy res: %d\n",hRes);
-  if (!SUCCEEDED(hRes)){
-    TRACE("Failed with code: %#lx",hRes);
   }
   
   //finally, remove from source if desired
