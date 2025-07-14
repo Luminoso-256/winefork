@@ -2248,6 +2248,10 @@ static HRESULT PropertyStorage_WritePropertyToStream(PropertyStorage_impl *This,
         break;
     case VT_I2:
     case VT_UI2:
+    //according to https://learn.microsoft.com/en-us/windows/win32/api/propidl/ns-propidl-propvariant
+    //VT_BOOL corresponds to a VARIANT_BOOL datatype
+    //according to the COM headers, VARIANT_BOOL is a short. yes, really.
+    case VT_BOOL:
     {
         WORD wTemp;
 

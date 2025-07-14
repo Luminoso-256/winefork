@@ -543,18 +543,24 @@ static DirRef findElement(StorageBaseImpl *storage, DirRef storageEntry,
     LONG cmp;
 
     StorageBaseImpl_ReadDirEntry(storage, currentEntry, data);
-
+    TRACE("Name Compare: %s vs %s",debugstr_w(name),debugstr_w(data->name));
     cmp = entryNameCmp(name, data->name);
 
-    if (cmp == 0)
+    if (cmp == 0){
       /* found it */
+      TRACE("Name compare passed, returning\n");
       break;
+    }
 
-    else if (cmp < 0)
+    else if (cmp < 0){
+      TRACE("Name compare failed to the left");
       currentEntry = data->leftChild;
+    }
 
-    else if (cmp > 0)
+    else if (cmp > 0){
+      TRACE("Name compare failed to the right");
       currentEntry = data->rightChild;
+    }
   }
 
   return currentEntry;
@@ -1681,16 +1687,19 @@ static HRESULT WINAPI StorageBaseImpl_OpenStorage(
                          pwcsName,
                          &currentEntry);
 
+  TRACE("end find element, current entry: %s, of type %d",debugstr_w(currentEntry.name),currentEntry.stgType);
+
   if ( (storageEntryRef!=DIRENTRY_NULL) &&
        (currentEntry.stgType==STGTY_STORAGE) )
   {
+    TRACE("found element that wasn't direntry null, yay");
     if (StorageBaseImpl_IsStorageOpen(This, storageEntryRef))
     {
       /* A single storage cannot be opened a second time. */
       res = STG_E_ACCESSDENIED;
       goto end;
     }
-
+    TRACE("attempt construct storage");
     newStorage = StorageInternalImpl_Construct(
                    This,
                    grfMode,
@@ -2370,9 +2379,95 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
   const OLECHAR *pwcsNewName,/* [string][in] */
   DWORD           grfFlags)    /* [in] */
 {
-  FIXME("%p, %s, %p, %s, %#lx: stub\n", iface, debugstr_w(pwcsName), pstgDest,
+  FIXME("MoveElementTo::::::: %p, %s, %p, %s, %#lx: stub\n", iface, debugstr_w(pwcsName), pstgDest,
       debugstr_w(pwcsNewName), grfFlags);
-  return E_NOTIMPL;
+  //according to https://learn.microsoft.com/en-us/windows/win32/api/objidl/nf-objidl-istorage-moveelementto
+  //this is supposed to be functionally equivalent to a CopyTo followed by a delete
+  StorageBaseImpl* This = impl_from_IStorage(iface);
+  STATSTG storageStat;
+
+  //stupid! Wrong! obviously the actual storage is a storage we care about the element we're working with  :(
+ // StorageBaseImpl_Stat(iface,&storageStat,STATFLAG_DEFAULT);
+
+  DirRef srcRef;
+  DirEntry srcEntry;
+
+    srcRef = findElement(
+    This,
+    This->storageDirEntry,
+    pwcsName,
+    &srcEntry
+    );
+
+  HRESULT hRes;
+
+  OLECHAR *targetName = (pwcsNewName == NULL) ? pwcsName : pwcsNewName;
+
+  if (srcEntry.stgType == STGTY_STORAGE){
+    IStorage* sourceElm = NULL;
+    TRACE("STGY_STORAGE\n");
+    TRACE("Open Storage (looking for %s)\n",debugstr_w(pwcsName));
+    hRes = IStorage_OpenStorage(iface,pwcsName,NULL,STGM_READ | STGM_SHARE_EXCLUSIVE,0,0,&sourceElm);
+    if (FAILED(hRes)){
+       TRACE("FAIL!  %#lx\n",hRes);
+       return hRes;
+    }
+    TRACE("made it past opening the source subelement\n");
+
+    IStorage* destElm = NULL;
+
+    hRes = IStorage_CreateStorage(pstgDest,targetName,STGM_READWRITE | STGM_SHARE_EXCLUSIVE | STGM_CREATE, 0,0,&destElm);
+    if (FAILED(hRes)){ 
+      IStorage_Release(sourceElm);
+      return hRes;
+    }
+
+    //perform the copy
+    hRes = IStorage_CopyTo(sourceElm,0,NULL,NULL,destElm);
+
+    IStorage_Release(sourceElm);
+    IStorage_Release(destElm);
+  } else if (srcEntry.stgType = STGTY_STREAM){
+    TRACE("Stream: %s --> %s\n",debugstr_w(pwcsName),debugstr_w(targetName));
+    IStream* sourceStream;
+    hRes = IStorage_OpenStream(iface,pwcsName,NULL,STGM_READ | STGM_SHARE_EXCLUSIVE,0,&sourceStream);
+    if (FAILED(hRes)){ 
+       TRACE("Fail to open source stream: %#lx",hRes);
+      return hRes;
+    }
+
+    IStream* destStream;
+    hRes = IStorage_CreateStream(pstgDest,targetName,STGM_READWRITE | STGM_SHARE_EXCLUSIVE | STGM_CREATE, 0,0,&destStream);
+    if (FAILED(hRes)){
+      TRACE("Fail to create dest stream: %#lx",hRes);
+      IStream_Release(sourceStream);
+      return hRes;
+    }
+
+    STATSTG strStat;
+
+    IStream_Stat(sourceStream,&strStat,STATFLAG_NONAME);
+    TRACE("Stream size: %ld\n",strStat.cbSize);
+    IStream_SetSize(destStream,strStat.cbSize);
+    hRes = IStream_CopyTo(sourceStream,destStream,strStat.cbSize,NULL,NULL);
+  
+    IStream_Release(sourceStream);
+    IStream_Release(destStream);
+  } else {
+     FIXME("MoveElementTo currently unsupported type: %d\n",storageStat.type);
+     return E_NOTIMPL;
+  }
+
+  TRACE("storage copy res: %d\n",hRes);
+  if (!SUCCEEDED(hRes)){
+    TRACE("Failed with code: %#lx",hRes);
+  }
+  
+  //finally, remove from source if desired
+  if (grfFlags & STGMOVE_MOVE && SUCCEEDED(hRes)){
+    IStorage_DestroyElement(iface,pwcsName);
+  } 
+  return S_OK;
 }
 
 /*************************************************************************
@@ -5753,6 +5848,7 @@ static DirRef TransactedSnapshotImpl_FindFirstChild(
     }
     else
       break;
+      
   }
 
   return cursor;

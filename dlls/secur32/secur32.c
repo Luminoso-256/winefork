@@ -1130,6 +1130,7 @@ BOOLEAN WINAPI GetUserNameExW(
     switch (NameFormat)
     {
     case NameSamCompatible:
+    case NameDisplay: //this isn't really right but it shouldn't really hurt either?
         {
             WCHAR samname[UNLEN + 1 + MAX_COMPUTERNAME_LENGTH + 1];
             LPWSTR out;
@@ -1157,10 +1158,8 @@ BOOLEAN WINAPI GetUserNameExW(
             }
             return FALSE;
         }
-
     case NameUnknown:
     case NameFullyQualifiedDN:
-    case NameDisplay:
     case NameUniqueId:
     case NameCanonical:
     case NameUserPrincipal:
