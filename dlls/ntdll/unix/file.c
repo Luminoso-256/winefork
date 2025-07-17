@@ -1096,6 +1096,8 @@ static char *get_device_mount_point( dev_t dev )
 #if defined(HAVE_GETATTRLIST) && defined(ATTR_VOL_CAPABILITIES) && \
     defined(VOL_CAPABILITIES_FORMAT) && defined(VOL_CAP_FMT_CASE_SENSITIVE)
 
+static pthread_mutex_t fs_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 struct get_fsid
 {
     ULONG size;
@@ -1168,10 +1170,11 @@ static void add_fs_cache( dev_t dev, fsid_t fsid, BOOLEAN case_sensitive )
  *           get_dir_case_sensitivity_attr
  *
  * Checks if the volume containing the specified directory is case
- * sensitive or not. Uses getattrlist(2).
+ * sensitive or not. Uses getattrlist(2)/getattrlistat(2).
  */
-static int get_dir_case_sensitivity_attr( const char *dir )
+static int get_dir_case_sensitivity_attr( int root_fd, const char *dir )
 {
+    BOOLEAN ret = FALSE;
     char *mntpoint;
     struct attrlist attr;
     struct vol_caps caps;
@@ -1184,16 +1187,21 @@ static int get_dir_case_sensitivity_attr( const char *dir )
     attr.commonattr = ATTR_CMN_DEVID|ATTR_CMN_FSID;
     attr.volattr = attr.dirattr = attr.fileattr = attr.forkattr = 0;
     get_fsid.size = 0;
-    if (getattrlist( dir, &attr, &get_fsid, sizeof(get_fsid), 0 ) != 0 ||
+    if (getattrlistat( root_fd, dir, &attr, &get_fsid, sizeof(get_fsid), 0 ) != 0 ||
         get_fsid.size != sizeof(get_fsid))
         return -1;
+
     /* Try to look it up in the cache */
+    mutex_lock( &fs_cache_mutex );
     entry = look_up_fs_cache( get_fsid.dev );
     if (entry && !memcmp( &entry->fsid, &get_fsid.fsid, sizeof(fsid_t) ))
+    {
         /* Cache lookup succeeded */
-        return entry->case_sensitive;
-    /* Cache is stale at this point, we have to update it */
+        ret = entry->case_sensitive;
+        goto done;
+    }
 
+    /* Cache is stale at this point, we have to update it */
     mntpoint = get_device_mount_point( get_fsid.dev );
     /* Now look up the case-sensitivity */
     attr.commonattr = 0;
@@ -1202,7 +1210,8 @@ static int get_dir_case_sensitivity_attr( const char *dir )
     {
         free( mntpoint );
         add_fs_cache( get_fsid.dev, get_fsid.fsid, TRUE );
-        return TRUE;
+        ret = TRUE;
+        goto done;
     }
     free( mntpoint );
     if (caps.size == sizeof(caps) &&
@@ -1210,8 +1219,6 @@ static int get_dir_case_sensitivity_attr( const char *dir )
          (VOL_CAP_FMT_CASE_SENSITIVE | VOL_CAP_FMT_CASE_PRESERVING)) ==
         (VOL_CAP_FMT_CASE_SENSITIVE | VOL_CAP_FMT_CASE_PRESERVING))
     {
-        BOOLEAN ret;
-
         if ((caps.caps.capabilities[VOL_CAPABILITIES_FORMAT] &
             VOL_CAP_FMT_CASE_SENSITIVE) != VOL_CAP_FMT_CASE_SENSITIVE)
             ret = FALSE;
@@ -1219,9 +1226,12 @@ static int get_dir_case_sensitivity_attr( const char *dir )
             ret = TRUE;
         /* Update the cache */
         add_fs_cache( get_fsid.dev, get_fsid.fsid, ret );
-        return ret;
+        goto done;
     }
-    return FALSE;
+
+done:
+    mutex_unlock( &fs_cache_mutex );
+    return ret;
 }
 #endif
 
@@ -1231,12 +1241,19 @@ static int get_dir_case_sensitivity_attr( const char *dir )
  * Checks if the volume containing the specified directory is case
  * sensitive or not. Uses (f)statfs(2), statvfs(2), fstatat(2), or ioctl(2).
  */
-static BOOLEAN get_dir_case_sensitivity_stat( const char *dir )
+static BOOLEAN get_dir_case_sensitivity_stat( int root_fd, const char *dir )
 {
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
     struct statfs stfs;
+    int fd;
 
-    if (statfs( dir, &stfs ) == -1) return TRUE;
+    if ((fd = openat( root_fd, dir, O_RDONLY )) == -1) return TRUE;
+    if (fstatfs( fd, &stfs ) == -1)
+    {
+        close( fd );
+        return TRUE;
+    }
+    close( fd );
     /* Assume these file systems are always case insensitive.*/
     if (!strcmp( stfs.f_fstypename, "fusefs" ) &&
         !strncmp( stfs.f_mntfromname, "ciopfs", 5 ))
@@ -1277,8 +1294,15 @@ static BOOLEAN get_dir_case_sensitivity_stat( const char *dir )
 
 #elif defined(__NetBSD__)
     struct statvfs stfs;
+    int fd;
 
-    if (statvfs( dir, &stfs ) == -1) return TRUE;
+    if ((fd = openat( root_fd, dir, O_RDONLY )) == -1) return TRUE;
+    if (fstatvfs( fd, &stfs ) == -1)
+    {
+        close( fd );
+        return TRUE;
+    }
+    close( fd );
     /* Only assume CIOPFS is case insensitive. */
     if (strcmp( stfs.f_fstypename, "fusefs" ) ||
         strncmp( stfs.f_mntfromname, "ciopfs", 5 ))
@@ -1291,7 +1315,7 @@ static BOOLEAN get_dir_case_sensitivity_stat( const char *dir )
     struct stat st;
     int fd, flags;
 
-    if ((fd = open( dir, O_RDONLY | O_NONBLOCK )) == -1)
+    if ((fd = openat( root_fd, dir, O_RDONLY | O_NONBLOCK )) == -1)
         return TRUE;
 
     if (ioctl( fd, EXT2_IOC_GETFLAGS, &flags ) != -1 && (flags & EXT4_CASEFOLD_FL))
@@ -1319,14 +1343,14 @@ static BOOLEAN get_dir_case_sensitivity_stat( const char *dir )
  * Checks if the volume containing the specified directory is case
  * sensitive or not. Uses multiple methods, depending on platform.
  */
-static BOOLEAN get_dir_case_sensitivity( const char *dir )
+static BOOLEAN get_dir_case_sensitivity( int root_fd, const char *dir )
 {
 #if defined(HAVE_GETATTRLIST) && defined(ATTR_VOL_CAPABILITIES) && \
     defined(VOL_CAPABILITIES_FORMAT) && defined(VOL_CAP_FMT_CASE_SENSITIVE)
-    int case_sensitive = get_dir_case_sensitivity_attr( dir );
+    int case_sensitive = get_dir_case_sensitivity_attr( root_fd, dir );
     if (case_sensitive != -1) return case_sensitive;
 #endif
-    return get_dir_case_sensitivity_stat( dir );
+    return get_dir_case_sensitivity_stat( root_fd, dir );
 }
 
 
@@ -2484,7 +2508,7 @@ done:
 static NTSTATUS read_directory_data_getattrlist( struct dir_data *data, const char *unix_name )
 {
     struct attrlist attrlist;
-#include "pshpack4.h"
+#pragma pack(push,4)
     struct
     {
         u_int32_t length;
@@ -2492,7 +2516,7 @@ static NTSTATUS read_directory_data_getattrlist( struct dir_data *data, const ch
         fsobj_type_t type;
         char name[NAME_MAX * 3 + 1];
     } buffer;
-#include "poppack.h"
+#pragma pack(pop)
 
     memset( &attrlist, 0, sizeof(attrlist) );
     attrlist.bitmapcount = ATTR_BIT_MAP_COUNT;
@@ -2529,7 +2553,7 @@ static NTSTATUS read_directory_data_stat( struct dir_data *data, const char *uni
     struct stat st;
 
     /* if the file system is not case sensitive we can't find the actual name through stat() */
-    if (!get_dir_case_sensitivity(".")) return STATUS_NO_SUCH_FILE;
+    if (!get_dir_case_sensitivity( AT_FDCWD, "." )) return STATUS_NO_SUCH_FILE;
     if (stat( unix_name, &st ) == -1) return STATUS_NO_SUCH_FILE;
 
     TRACE( "found %s\n", debugstr_a(unix_name) );
@@ -2767,7 +2791,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile( HANDLE handle, HANDLE event, PIO_APC_ROUTI
 
     TRACE("(%p %p %p %p %p %p 0x%08x 0x%08x 0x%08x %s 0x%08x\n",
           handle, event, apc_routine, apc_context, io, buffer,
-          (int)length, info_class, single_entry, debugstr_us(mask),
+          length, info_class, single_entry, debugstr_us(mask),
           restart_scan);
 
     if (event || apc_routine)
@@ -2853,7 +2877,7 @@ NTSTATUS WINAPI NtQueryDirectoryFile( HANDLE handle, HANDLE event, PIO_APC_ROUTI
  * The file found is appended to unix_name at pos.
  * There must be at least MAX_DIR_ENTRY_LEN+2 chars available at pos.
  */
-static NTSTATUS find_file_in_dir( char *unix_name, int pos, const WCHAR *name, int length,
+static NTSTATUS find_file_in_dir( int root_fd, char *unix_name, int pos, const WCHAR *name, int length,
                                   BOOLEAN check_case )
 {
     WCHAR buffer[MAX_DIR_ENTRY_LEN];
@@ -2861,7 +2885,7 @@ static NTSTATUS find_file_in_dir( char *unix_name, int pos, const WCHAR *name, i
     DIR *dir;
     struct dirent *de;
     struct stat st;
-    int ret;
+    int fd, ret;
 
     /* try a shortcut for this directory */
 
@@ -2870,7 +2894,7 @@ static NTSTATUS find_file_in_dir( char *unix_name, int pos, const WCHAR *name, i
     if (ret >= 0 && ret <= MAX_DIR_ENTRY_LEN)
     {
         unix_name[pos + ret] = 0;
-        if (!stat( unix_name, &st )) return STATUS_SUCCESS;
+        if (!fstatat( root_fd, unix_name, &st, 0 )) return STATUS_SUCCESS;
     }
     if (check_case) goto not_found;  /* we want an exact match */
 
@@ -2884,14 +2908,14 @@ static NTSTATUS find_file_in_dir( char *unix_name, int pos, const WCHAR *name, i
     is_name_8_dot_3 = is_name_8_dot_3 && length >= 8 && name[4] == '~';
 #endif
 
-    if (!is_name_8_dot_3 && !get_dir_case_sensitivity( unix_name )) goto not_found;
+    if (!is_name_8_dot_3 && !get_dir_case_sensitivity( root_fd, unix_name )) goto not_found;
 
     /* now look for it through the directory */
 
 #ifdef VFAT_IOCTL_READDIR_BOTH
     if (is_name_8_dot_3)
     {
-        int fd = open( unix_name, O_RDONLY | O_DIRECTORY );
+        int fd = openat( root_fd, unix_name, O_RDONLY | O_DIRECTORY );
         if (fd != -1)
         {
             KERNEL_DIRENT kde[2];
@@ -2936,7 +2960,12 @@ static NTSTATUS find_file_in_dir( char *unix_name, int pos, const WCHAR *name, i
     }
 #endif /* VFAT_IOCTL_READDIR_BOTH */
 
-    if (!(dir = opendir( unix_name ))) return errno_to_status( errno );
+    if ((fd = openat( root_fd, unix_name, O_RDONLY )) == -1) return errno_to_status( errno );
+    if (!(dir = fdopendir( fd )))
+    {
+        close( fd );
+        return errno_to_status( errno );
+    }
 
     unix_name[pos - 1] = '/';
     while ((de = readdir( dir )))
@@ -3488,8 +3517,8 @@ done:
  *
  * Helper for nt_to_unix_file_name
  */
-static NTSTATUS lookup_unix_name( const WCHAR *name, int name_len, char **buffer, int unix_len, int pos,
-                                  UINT disposition, BOOL is_unix )
+static NTSTATUS lookup_unix_name( int root_fd, const WCHAR *name, int name_len, char **buffer, int unix_len,
+                                  int pos, UINT disposition, BOOL is_unix )
 {
     static const WCHAR invalid_charsW[] = { INVALID_NT_CHARS, '/', 0 };
     NTSTATUS status;
@@ -3531,7 +3560,7 @@ static NTSTATUS lookup_unix_name( const WCHAR *name, int name_len, char **buffer
         char *p;
         unix_name[pos + 1 + ret] = 0;
         for (p = unix_name + pos ; *p; p++) if (*p == '\\') *p = '/';
-        if (!stat( unix_name, &st ))
+        if (!fstatat( root_fd, unix_name, &st, 0 ))
         {
             if (disposition == FILE_CREATE) return STATUS_OBJECT_NAME_COLLISION;
             return STATUS_SUCCESS;
@@ -3565,7 +3594,7 @@ static NTSTATUS lookup_unix_name( const WCHAR *name, int name_len, char **buffer
             unix_name = *buffer = new_name;
         }
 
-        status = find_file_in_dir( unix_name, pos, name, end - name, is_unix );
+        status = find_file_in_dir( root_fd, unix_name, pos, name, end - name, is_unix );
 
         /* if this is the last element, not finding it is not necessarily fatal */
         if (!name_len)
@@ -3702,7 +3731,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( const UNICODE_STRING *nameW, char 
     name += prefix_len;
     name_len -= prefix_len;
 
-    status = lookup_unix_name( name, name_len, &unix_name, unix_len, pos, disposition, is_unix );
+    status = lookup_unix_name( AT_FDCWD, name, name_len, &unix_name, unix_len, pos, disposition, is_unix );
     if (status == STATUS_SUCCESS || status == STATUS_NO_SUCH_FILE)
     {
         TRACE( "%s -> %s\n", debugstr_us(nameW), debugstr_a(unix_name) );
@@ -3729,7 +3758,7 @@ static NTSTATUS nt_to_unix_file_name_no_root( const UNICODE_STRING *nameW, char 
 NTSTATUS nt_to_unix_file_name( const OBJECT_ATTRIBUTES *attr, char **name_ret, UINT disposition )
 {
     enum server_fd_type type;
-    int old_cwd, root_fd, needs_close;
+    int root_fd, needs_close;
     const WCHAR *name;
     char *unix_name;
     int name_len, unix_len;
@@ -3756,15 +3785,7 @@ NTSTATUS nt_to_unix_file_name( const OBJECT_ATTRIBUTES *attr, char **name_ret, U
         }
         else
         {
-            mutex_lock( &dir_mutex );
-            if ((old_cwd = open( ".", O_RDONLY )) != -1 && fchdir( root_fd ) != -1)
-            {
-                status = lookup_unix_name( name, name_len, &unix_name, unix_len, 1, disposition, FALSE );
-                if (fchdir( old_cwd ) == -1) chdir( "/" );
-            }
-            else status = errno_to_status( errno );
-            mutex_unlock( &dir_mutex );
-            if (old_cwd != -1) close( old_cwd );
+            status = lookup_unix_name( root_fd, name, name_len, &unix_name, unix_len, 1, disposition, FALSE );
             if (needs_close) close( root_fd );
         }
     }
@@ -4118,9 +4139,9 @@ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBU
 
     TRACE( "handle=%p access=%08x name=%s objattr=%08x root=%p sec=%p io=%p alloc_size=%p "
            "attr=%08x sharing=%08x disp=%d options=%08x ea=%p.0x%08x\n",
-           handle, (int)access, debugstr_us(attr->ObjectName), (int)attr->Attributes,
+           handle, access, debugstr_us(attr->ObjectName), attr->Attributes,
            attr->RootDirectory, attr->SecurityDescriptor, io, alloc_size,
-           (int)attributes, (int)sharing, (int)disposition, (int)options, ea_buffer, (int)ea_length );
+           attributes, sharing, disposition, options, ea_buffer, ea_length );
 
     *handle = 0;
     if (!attr || !attr->ObjectName) return STATUS_INVALID_PARAMETER;
@@ -4231,7 +4252,7 @@ NTSTATUS WINAPI NtCreateMailslotFile( HANDLE *handle, ULONG access, OBJECT_ATTRI
     struct object_attributes *objattr;
 
     TRACE( "%p %08x %p %p %08x %08x %08x %p\n",
-           handle, (int)access, attr, io, (int)options, (int)quota, (int)msg_size, timeout );
+           handle, access, attr, io, options, quota, msg_size, timeout );
 
     *handle = 0;
     if (!attr) return STATUS_INVALID_PARAMETER;
@@ -4270,9 +4291,9 @@ NTSTATUS WINAPI NtCreateNamedPipeFile( HANDLE *handle, ULONG access, OBJECT_ATTR
     if (!attr) return STATUS_INVALID_PARAMETER;
 
     TRACE( "(%p %x %s %p %x %d %x %d %d %d %d %d %d %p)\n",
-           handle, (int)access, debugstr_us(attr->ObjectName), io, (int)sharing, (int)dispo,
-           (int)options, (int)pipe_type, (int)read_mode, (int)completion_mode, (int)max_inst,
-           (int)inbound_quota, (int)outbound_quota, timeout );
+           handle, access, debugstr_us(attr->ObjectName), io, sharing, dispo,
+           options, pipe_type, read_mode, completion_mode, max_inst,
+           inbound_quota, outbound_quota, timeout );
 
     /* assume we only get relative timeout */
     if (timeout && timeout->QuadPart > 0) FIXME( "Wrong time %s\n", wine_dbgstr_longlong(timeout->QuadPart) );
@@ -4500,7 +4521,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
     unsigned int options;
     unsigned int status;
 
-    TRACE( "(%p,%p,%p,0x%08x,0x%08x)\n", handle, io, ptr, (int)len, class);
+    TRACE( "(%p,%p,%p,0x%08x,0x%08x)\n", handle, io, ptr, len, class);
 
     io->Information = 0;
 
@@ -4703,7 +4724,7 @@ NTSTATUS WINAPI NtSetInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
     int fd, needs_close;
     unsigned int status = STATUS_SUCCESS;
 
-    TRACE( "(%p,%p,%p,0x%08x,0x%08x)\n", handle, io, ptr, (int)len, class );
+    TRACE( "(%p,%p,%p,0x%08x,0x%08x)\n", handle, io, ptr, len, class );
 
     switch (class)
     {
@@ -5564,7 +5585,7 @@ NTSTATUS WINAPI NtReadFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, vo
     BOOL send_completion = FALSE, async_read, timeout_init_done = FALSE;
 
     TRACE( "(%p,%p,%p,%p,%p,%p,0x%08x,%p,%p)\n",
-           handle, event, apc, apc_user, io, buffer, (int)length, offset, key );
+           handle, event, apc, apc_user, io, buffer, length, offset, key );
 
     if (!io) return STATUS_ACCESS_VIOLATION;
 
@@ -5765,7 +5786,7 @@ NTSTATUS WINAPI NtReadFileScatter( HANDLE file, HANDLE event, PIO_APC_ROUTINE ap
     BOOL send_completion = FALSE;
 
     TRACE( "(%p,%p,%p,%p,%p,%p,0x%08x,%p,%p),partial stub!\n",
-           file, event, apc, apc_user, io, segments, (int)length, offset, key );
+           file, event, apc, apc_user, io, segments, length, offset, key );
 
     if (!io) return STATUS_ACCESS_VIOLATION;
 
@@ -5844,7 +5865,7 @@ NTSTATUS WINAPI NtWriteFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, v
     LARGE_INTEGER offset_eof;
 
     TRACE( "(%p,%p,%p,%p,%p,%p,0x%08x,%p,%p)\n",
-           handle, event, apc, apc_user, io, buffer, (int)length, offset, key );
+           handle, event, apc, apc_user, io, buffer, length, offset, key );
 
     if (!io) return STATUS_ACCESS_VIOLATION;
 
@@ -6064,7 +6085,7 @@ NTSTATUS WINAPI NtWriteFileGather( HANDLE file, HANDLE event, PIO_APC_ROUTINE ap
     enum server_fd_type type;
 
     TRACE( "(%p,%p,%p,%p,%p,%p,0x%08x,%p,%p),partial stub!\n",
-           file, event, apc, apc_user, io, segments, (int)length, offset, key );
+           file, event, apc, apc_user, io, segments, length, offset, key );
 
     if (length % page_size) return STATUS_INVALID_PARAMETER;
     if (!io) return STATUS_ACCESS_VIOLATION;
@@ -6140,8 +6161,8 @@ NTSTATUS WINAPI NtDeviceIoControlFile( HANDLE handle, HANDLE event, PIO_APC_ROUT
     NTSTATUS status = STATUS_NOT_SUPPORTED;
 
     TRACE( "(%p,%p,%p,%p,%p,0x%08x,%p,0x%08x,%p,0x%08x)\n",
-           handle, event, apc, apc_context, io, (int)code,
-           in_buffer, (int)in_size, out_buffer, (int)out_size );
+           handle, event, apc, apc_context, io, code,
+           in_buffer, in_size, out_buffer, out_size );
 
     /* some broken applications call this frequently with INVALID_HANDLE_VALUE,
      * and run slowly if we make a server call every time */
@@ -6228,8 +6249,8 @@ NTSTATUS WINAPI NtFsControlFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE ap
     NTSTATUS status;
 
     TRACE( "(%p,%p,%p,%p,%p,0x%08x,%p,0x%08x,%p,0x%08x)\n",
-           handle, event, apc, apc_context, io, (int)code,
-           in_buffer, (int)in_size, out_buffer, (int)out_size );
+           handle, event, apc, apc_context, io, code,
+           in_buffer, in_size, out_buffer, out_size );
 
     if (!io) return STATUS_INVALID_PARAMETER;
 
@@ -6257,7 +6278,7 @@ NTSTATUS WINAPI NtFsControlFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE ap
     case FSCTL_LOCK_VOLUME:
     case FSCTL_UNLOCK_VOLUME:
         FIXME("stub! return success - Unsupported fsctl %x (device=%x access=%x func=%x method=%x)\n",
-              (int)code, (int)code >> 16, ((int)code >> 14) & 3, ((int)code >> 2) & 0xfff, (int)code & 3);
+              code, code >> 16, (code >> 14) & 3, (code >> 2) & 0xfff, code & 3);
         status = STATUS_SUCCESS;
         break;
 
@@ -6347,10 +6368,10 @@ NTSTATUS WINAPI NtFlushBuffersFileEx( HANDLE handle, ULONG flags, void *params, 
     enum server_fd_type type;
     int fd, needs_close;
 
-    TRACE( "(%p,0x%08x,%p,0x%08x,%p)\n", handle, (int)flags, params, (int)size, io );
+    TRACE( "(%p,0x%08x,%p,0x%08x,%p)\n", handle, flags, params, size, io );
 
-    if (flags) FIXME( "flags 0x%08x ignored\n", (int)flags );
-    if (params || size) FIXME( "params %p/0x%08x ignored\n", params, (int)size );
+    if (flags) FIXME( "flags 0x%08x ignored\n", flags );
+    if (params || size) FIXME( "params %p/0x%08x ignored\n", params, size );
 
     if (!io || !virtual_check_buffer_for_write( io, sizeof(*io) )) return STATUS_ACCESS_VIOLATION;
 
@@ -6654,7 +6675,7 @@ NTSTATUS WINAPI NtNotifyChangeDirectoryFile( HANDLE handle, HANDLE event, PIO_AP
     ULONG size = max( 4096, buffer_size );
 
     TRACE( "%p %p %p %p %p %p %u %u %d\n",
-           handle, event, apc, apc_context, iosb, buffer, (int)buffer_size, (int)filter, subtree );
+           handle, event, apc, apc_context, iosb, buffer, buffer_size, filter, subtree );
 
     if (!iosb) return STATUS_ACCESS_VIOLATION;
     if (filter == 0 || (filter & ~FILE_NOTIFY_ALL)) return STATUS_INVALID_PARAMETER;
@@ -6762,6 +6783,9 @@ NTSTATUS get_device_info( int fd, FILE_FS_DEVICE_INFORMATION *info )
                     break;
                 case D_DISK:
                     info->DeviceType = FILE_DEVICE_DISK;
+#if defined(__APPLE__)
+                    if (major(st.st_rdev) == 3 && minor(st.st_rdev) == 2) info->DeviceType = FILE_DEVICE_NULL;
+#endif
                     break;
                 case D_TTY:
                     info->DeviceType = FILE_DEVICE_SERIAL_PORT;
@@ -6772,7 +6796,7 @@ NTSTATUS get_device_info( int fd, FILE_FS_DEVICE_INFORMATION *info )
                     break;
 #endif
                 }
-            /* no special d_type for parallel ports */
+                /* no special d_type for parallel ports */
             }
         }
 #endif
@@ -7140,7 +7164,7 @@ NTSTATUS WINAPI NtQueryVolumeInformationFile( HANDLE handle, IO_STATUS_BLOCK *io
 NTSTATUS WINAPI NtSetVolumeInformationFile( HANDLE handle, IO_STATUS_BLOCK *io, void *info,
                                             ULONG length, FS_INFORMATION_CLASS class )
 {
-    FIXME( "(%p,%p,%p,0x%08x,0x%08x) stub\n", handle, io, info, (int)length, class );
+    FIXME( "(%p,%p,%p,0x%08x,0x%08x) stub\n", handle, io, info, length, class );
     return STATUS_SUCCESS;
 }
 
@@ -7156,7 +7180,7 @@ NTSTATUS WINAPI NtQueryEaFile( HANDLE handle, IO_STATUS_BLOCK *io, void *buffer,
     NTSTATUS status;
 
     FIXME( "(%p,%p,%p,%d,%d,%p,%d,%p,%d) semi-stub\n",
-           handle, io, buffer, (int)length, single_entry, list, (int)list_len, index, restart );
+           handle, io, buffer, length, single_entry, list, list_len, index, restart );
 
     if ((status = server_get_unix_fd( handle, 0, &fd, &needs_close, NULL, NULL )))
         return status;
@@ -7174,7 +7198,7 @@ NTSTATUS WINAPI NtQueryEaFile( HANDLE handle, IO_STATUS_BLOCK *io, void *buffer,
  */
 NTSTATUS WINAPI NtSetEaFile( HANDLE handle, IO_STATUS_BLOCK *io, void *buffer, ULONG length )
 {
-    FIXME( "(%p,%p,%p,%d) stub\n", handle, io, buffer, (int)length );
+    FIXME( "(%p,%p,%p,%d) stub\n", handle, io, buffer, length );
     return STATUS_ACCESS_DENIED;
 }
 
@@ -7211,7 +7235,7 @@ NTSTATUS WINAPI NtQueryObject( HANDLE handle, OBJECT_INFORMATION_CLASS info_clas
 {
     unsigned int status;
 
-    TRACE("(%p,0x%08x,%p,0x%08x,%p)\n", handle, info_class, ptr, (int)len, used_len);
+    TRACE("(%p,0x%08x,%p,0x%08x,%p)\n", handle, info_class, ptr, len, used_len);
 
     if (used_len) *used_len = 0;
 
@@ -7410,7 +7434,7 @@ NTSTATUS WINAPI NtSetInformationObject( HANDLE handle, OBJECT_INFORMATION_CLASS 
 {
     unsigned int status;
 
-    TRACE("(%p,0x%08x,%p,0x%08x)\n", handle, info_class, ptr, (int)len);
+    TRACE("(%p,0x%08x,%p,0x%08x)\n", handle, info_class, ptr, len);
 
     switch (info_class)
     {

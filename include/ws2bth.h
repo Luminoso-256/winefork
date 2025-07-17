@@ -19,7 +19,15 @@
 #ifndef __WS2BTH_H__
 #define __WS2BTH_H__
 
-#include <pshpack1.h>
+#pragma pack(push,1)
+
+#ifndef USE_WS_PREFIX
+#define BTHPROTO_RFCOMM    0x03
+#else
+#define WS_BTHPROTO_RFCOMM 0x03
+#endif
+
+#define BT_PORT_ANY -1
 
 typedef struct _SOCKADDR_BTH
 {
@@ -29,6 +37,6 @@ typedef struct _SOCKADDR_BTH
     ULONG port;
 } SOCKADDR_BTH, *PSOCKADDR_BTH;
 
-#include <poppack.h>
+#pragma pack(pop)
 
 #endif /* __WS2BTH_H__ */

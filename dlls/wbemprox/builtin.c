@@ -32,7 +32,6 @@
 #include "iphlpapi.h"
 #include "netioapi.h"
 #include "tlhelp32.h"
-#include "d3d10.h"
 #include "winternl.h"
 #include "winioctl.h"
 #include "winsvc.h"
@@ -40,7 +39,6 @@
 #include "sddl.h"
 #include "ntsecapi.h"
 #include "winspool.h"
-#include "setupapi.h"
 #include "ntddstor.h"
 
 #include "wine/debug.h"
@@ -83,6 +81,18 @@ static const struct column col_bios[] =
     { L"SystemBiosMajorVersion",         CIM_UINT8 },
     { L"SystemBiosMinorVersion",         CIM_UINT8 },
     { L"Version",                        CIM_STRING|COL_FLAG_KEY },
+};
+static const struct column col_cache_memory[] =
+{
+    { L"BlockSize",      CIM_UINT64 },
+    { L"CacheSpeed",     CIM_UINT32 },
+    { L"CacheType",      CIM_UINT16 },
+    { L"DeviceId",       CIM_STRING|COL_FLAG_DYNAMIC },
+    { L"InstalledSize",  CIM_UINT32 },
+    { L"Level",          CIM_UINT16 },
+    { L"MaxCacheSize",   CIM_UINT32 },
+    { L"NumberOfBlocks", CIM_UINT64 },
+    { L"Status",         CIM_STRING },
 };
 static const struct column col_cdromdrive[] =
 {
@@ -553,7 +563,7 @@ static const struct column col_winsat[] =
     { L"WinSPRLevel",           CIM_REAL32 },
 };
 
-#include "pshpack1.h"
+#pragma pack(push,1)
 struct record_associator
 {
     const WCHAR *assocclass;
@@ -588,6 +598,18 @@ struct record_bios
     UINT8        systembiosmajorversion;
     UINT8        systembiosminorversion;
     const WCHAR *version;
+};
+struct record_cache_memory
+{
+    UINT64       block_size;
+    UINT32       cache_speed;
+    UINT16       cache_type;
+    const WCHAR *device_id;
+    UINT32       installed_size;
+    UINT16       level;
+    UINT32       max_cache_size;
+    UINT64       number_of_blocks;
+    const WCHAR *status;
 };
 struct record_cdromdrive
 {
@@ -1056,7 +1078,7 @@ struct record_winsat
     UINT32       winsatassessmentstate;
     FLOAT        winsprlevel;
 };
-#include "poppack.h"
+#pragma pack(pop)
 
 static const struct record_associator data_associator[] =
 {
@@ -1233,7 +1255,7 @@ static BOOL resize_table( struct table *table, UINT row_count, UINT row_size )
     return TRUE;
 }
 
-#include "pshpack1.h"
+#pragma pack(push,1)
 struct smbios_prologue
 {
     BYTE  calling_method;
@@ -1336,7 +1358,7 @@ struct smbios_processor
     WORD                 core_enabled2;
     WORD                 thread_count2;
 };
-#include "poppack.h"
+#pragma pack(pop)
 
 #define RSMB (('R' << 24) | ('S' << 16) | ('M' << 8) | 'B')
 
@@ -3637,6 +3659,77 @@ static UINT get_processor_maxclockspeed( UINT index )
     return ret;
 }
 
+static enum fill_status fill_cache_memory( struct table *table, const struct expr *cond )
+{
+    enum fill_status status = FILL_STATUS_UNFILTERED;
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *info;
+    UINT i, idx, offset = 0, row_count = 0;
+    struct record_cache_memory *rec;
+    ULONG64 cache_size[16] = { 0 };
+    char *buffer = NULL;
+    DWORD size = 1024;
+    WCHAR str[64];
+
+    while (1)
+    {
+        buffer = realloc( buffer, size );
+        if (GetLogicalProcessorInformationEx( RelationCache, (void *)buffer, &size )) break;
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+        {
+            free( buffer );
+            return FILL_STATUS_FAILED;
+        }
+    }
+
+    info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)buffer;
+    while ((char *)info != buffer + size)
+    {
+        if (info->Cache.Level < ARRAY_SIZE(cache_size) && info->Cache.CacheSize)
+        {
+            if (!cache_size[info->Cache.Level]) ++row_count;
+            cache_size[info->Cache.Level] += info->Cache.CacheSize;
+        }
+        info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)((char *)info + info->Size);
+    }
+
+    if (!resize_table( table, row_count, sizeof(*rec) ))
+    {
+        free( buffer );
+        return FILL_STATUS_FAILED;
+    }
+
+    row_count = 0;
+    idx = 0;
+    for (i = 0; i < ARRAY_SIZE(cache_size); ++i)
+    {
+        if (!cache_size[i]) continue;
+        rec = (struct record_cache_memory *)(table->data + offset);
+        rec->block_size = 1024;
+        rec->cache_speed = 1;
+        rec->cache_type = 5;
+        rec->installed_size = cache_size[i] / rec->block_size;
+        rec->level = i + 2;
+        rec->max_cache_size = rec->installed_size;
+        rec->number_of_blocks = rec->installed_size;
+        swprintf( str, sizeof(str), L"Cache Memory %u", idx );
+        rec->device_id = wcsdup( str );
+        rec->status = L"OK";
+        if (!match_row( table, idx, cond, &status ))
+        {
+            free_row_values( table, idx );
+            ++idx;
+            continue;
+        }
+        offset += sizeof(*rec);
+        ++idx;
+        ++row_count;
+    }
+    TRACE("created %u rows\n", row_count);
+    table->num_rows = row_count;
+    free( buffer );
+    return status;
+}
+
 static enum fill_status fill_processor( struct table *table, const struct expr *cond )
 {
     WCHAR device_id[14], processor_id[17], version[50];
@@ -4574,6 +4667,7 @@ static struct table cimv2_builtin_classes[] =
     { L"SystemRestore", C(col_sysrestore), D(data_sysrestore) },
     { L"Win32_BIOS", C(col_bios), 0, 0, NULL, fill_bios },
     { L"Win32_BaseBoard", C(col_baseboard), 0, 0, NULL, fill_baseboard },
+    { L"Win32_CacheMemory", C(col_cache_memory), 0, 0, NULL, fill_cache_memory },
     { L"Win32_CDROMDrive", C(col_cdromdrive), 0, 0, NULL, fill_cdromdrive },
     { L"Win32_ComputerSystem", C(col_compsys), 0, 0, NULL, fill_compsys },
     { L"Win32_ComputerSystemProduct", C(col_compsysproduct), 0, 0, NULL, fill_compsysproduct },
@@ -4637,13 +4731,27 @@ void init_table_list( void )
     {
         list_init( &tables[ns] );
         for (i = 0; i < builtin_namespaces[ns].table_count; i++)
-        {
-            struct table *table = &builtin_namespaces[ns].tables[i];
-            InitializeCriticalSectionEx( &table->cs, 0, RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO );
-            table->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": table.cs" );
-            list_add_tail( &tables[ns], &table->entry );
-        }
+            list_add_tail( &tables[ns], &builtin_namespaces[ns].tables[i].entry );
         table_list[ns] = &tables[ns];
+    }
+}
+
+void free_dynamic_tables( void )
+{
+    UINT ns;
+
+    for (ns = 0; ns < ARRAY_SIZE(builtin_namespaces); ns++)
+    {
+        struct table *table, *next;
+
+        LIST_FOR_EACH_ENTRY_SAFE( table, next, table_list[ns], struct table, entry )
+        {
+            if (table->flags & TABLE_FLAG_DYNAMIC)
+            {
+                list_remove( &table->entry );
+                release_table( table );
+            }
+        }
     }
 }
 

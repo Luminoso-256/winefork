@@ -71,7 +71,7 @@
 @ stdcall PSCreatePropertyStoreFromObject(ptr long ptr ptr)
 @ stub PSCreatePropertyStoreFromPropertySetStorage
 @ stub PSCreateSimplePropertyChange
-@ stub PSEnumeratePropertyDescriptions
+@ stdcall PSEnumeratePropertyDescriptions(long ptr ptr)
 @ stub PSFormatForDisplay
 @ stub PSFormatForDisplayAlloc
 @ stub PSFormatPropertyValue

@@ -827,6 +827,7 @@ struct pe_image_info
     mem_size_t     stack_commit;
     unsigned int   entry_point;
     unsigned int   map_size;
+    unsigned int   alignment;
     unsigned int   zerobits;
     unsigned int   subsystem;
     unsigned short subsystem_minor;
@@ -849,7 +850,6 @@ struct pe_image_info
     unsigned int   checksum;
     unsigned int   dbg_offset;
     unsigned int   dbg_size;
-    unsigned int   __pad;
 };
 #define IMAGE_FLAGS_ComPlusNativeReady        0x01
 #define IMAGE_FLAGS_ComPlusILOnly             0x02
@@ -1006,6 +1006,11 @@ typedef volatile struct
     object_id_t          id;
     object_shm_t         shm;
 } shared_object_t;
+
+typedef volatile struct
+{
+    struct user_entry user_entries[MAX_USER_HANDLES];
+} session_shm_t;
 
 struct obj_locator
 {
@@ -1205,9 +1210,9 @@ struct get_process_info_reply
     unsigned int session_id;
     int          exit_code;
     int          priority;
+    unsigned short base_priority;
     unsigned short machine;
     /* VARARG(image,pe_image_info); */
-    char __pad_62[2];
 };
 
 
@@ -1266,19 +1271,20 @@ struct set_process_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
-    int          mask;
     int          priority;
+    int          base_priority;
     affinity_t   affinity;
     obj_handle_t token;
-    char __pad_36[4];
+    int          mask;
 };
 struct set_process_info_reply
 {
     struct reply_header __header;
 };
-#define SET_PROCESS_INFO_PRIORITY 0x01
-#define SET_PROCESS_INFO_AFFINITY 0x02
-#define SET_PROCESS_INFO_TOKEN    0x04
+#define SET_PROCESS_INFO_PRIORITY      0x01
+#define SET_PROCESS_INFO_BASE_PRIORITY 0x02
+#define SET_PROCESS_INFO_AFFINITY      0x04
+#define SET_PROCESS_INFO_TOKEN         0x08
 
 
 
@@ -1299,7 +1305,7 @@ struct get_thread_info_reply
     affinity_t   affinity;
     int          exit_code;
     int          priority;
-    int          last;
+    int          base_priority;
     int          suspend_count;
     unsigned int flags;
     data_size_t  desc_len;
@@ -1307,6 +1313,7 @@ struct get_thread_info_reply
 };
 #define GET_THREAD_INFO_FLAG_DBG_HIDDEN 0x01
 #define GET_THREAD_INFO_FLAG_TERMINATED 0x02
+#define GET_THREAD_INFO_FLAG_LAST       0x04
 
 
 
@@ -1330,24 +1337,25 @@ struct set_thread_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
-    int          mask;
     int          priority;
+    int          base_priority;
     affinity_t   affinity;
     client_ptr_t entry_point;
     obj_handle_t token;
+    unsigned int mask;
     /* VARARG(desc,unicode_str); */
-    char __pad_44[4];
 };
 struct set_thread_info_reply
 {
     struct reply_header __header;
 };
-#define SET_THREAD_INFO_PRIORITY    0x01
-#define SET_THREAD_INFO_AFFINITY    0x02
-#define SET_THREAD_INFO_TOKEN       0x04
-#define SET_THREAD_INFO_ENTRYPOINT  0x08
-#define SET_THREAD_INFO_DESCRIPTION 0x10
-#define SET_THREAD_INFO_DBG_HIDDEN  0x20
+#define SET_THREAD_INFO_PRIORITY        0x01
+#define SET_THREAD_INFO_BASE_PRIORITY   0x02
+#define SET_THREAD_INFO_AFFINITY        0x04
+#define SET_THREAD_INFO_TOKEN           0x08
+#define SET_THREAD_INFO_ENTRYPOINT      0x10
+#define SET_THREAD_INFO_DESCRIPTION     0x20
+#define SET_THREAD_INFO_DBG_HIDDEN      0x40
 
 
 
@@ -3458,14 +3466,10 @@ struct get_window_info_request
 struct get_window_info_reply
 {
     struct reply_header __header;
-    user_handle_t  full_handle;
     user_handle_t  last_active;
-    process_id_t   pid;
-    thread_id_t    tid;
-    atom_t         atom;
     int            is_unicode;
     unsigned int   dpi_context;
-    char __pad_36[4];
+    char __pad_20[4];
 };
 
 
@@ -5366,9 +5370,11 @@ struct get_token_info_reply
     unsigned int   session_id;
     int            primary;
     int            impersonation_level;
-    int            elevation;
+    int            elevation_type;
+    int            is_elevated;
     int            group_count;
     int            privilege_count;
+    char __pad_52[4];
 };
 
 
@@ -5613,7 +5619,8 @@ struct set_window_layered_info_reply
 struct alloc_user_handle_request
 {
     struct request_header __header;
-    char __pad_12[4];
+    unsigned short type;
+    char __pad_14[2];
 };
 struct alloc_user_handle_reply
 {
@@ -5627,7 +5634,10 @@ struct alloc_user_handle_reply
 struct free_user_handle_request
 {
     struct request_header __header;
+    unsigned short type;
+    char __pad_14[2];
     user_handle_t  handle;
+    char __pad_20[4];
 };
 struct free_user_handle_reply
 {
@@ -6796,6 +6806,6 @@ union generic_reply
     struct set_keyboard_repeat_reply set_keyboard_repeat_reply;
 };
 
-#define SERVER_PROTOCOL_VERSION 857
+#define SERVER_PROTOCOL_VERSION 871
 
 #endif /* __WINE_WINE_SERVER_PROTOCOL_H */

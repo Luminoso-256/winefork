@@ -164,7 +164,7 @@
 # 2662 stub RIMRegisterForInputEx
 # 2663 stub RIMOnAsyncPnpWorkNotification
 2664 stub ShellMigrateWindow  # NtUserShellMigrateWindow
-2665 stub SetAdditionalForegroundBoostProcesses  # NtUserSetAdditionalForegroundBoostProcesses
+2665 stdcall SetAdditionalForegroundBoostProcesses(ptr long ptr) NtUserSetAdditionalForegroundBoostProcesses
 2666 stub RegisterForTooltipDismissNotification  # NtUserRegisterForTooltipDismissNotification
 2667 stub RegisterForCustomDockTargets  # NtUserRegisterForCustomDockTargets
 2668 stub GetClipboardMetadata  # NtUserGetClipboardMetadata
@@ -232,7 +232,7 @@
 @ stdcall AreDpiAwarenessContextsEqual(long long)
 @ stdcall ArrangeIconicWindows(long) NtUserArrangeIconicWindows
 @ stdcall AttachThreadInput(long long long) NtUserAttachThreadInput
-@ stdcall BeginDeferWindowPos(long)
+@ stdcall BeginDeferWindowPos(long) NtUserBeginDeferWindowPos
 @ stdcall BeginPaint(long ptr) NtUserBeginPaint
 @ stdcall BlockInput(long)
 @ stdcall BringWindowToTop(long)
@@ -802,7 +802,7 @@
 @ stdcall IsValidDpiAwarenessContext(long)
 @ stdcall IsWinEventHookInstalled(long)
 @ stdcall IsWindow(long)
-# @ stub IsWindowArranged
+@ stdcall IsWindowArranged(long)
 @ stdcall IsWindowEnabled(long)
 # @ stub IsWindowInDestroy
 @ stdcall IsWindowRedirectedForPrint(long)
@@ -810,7 +810,7 @@
 @ stdcall IsWindowVisible(long)
 # @ stub IsWow64Message
 @ stdcall IsZoomed(long)
-@ stdcall KillSystemTimer(long long)
+@ stdcall KillSystemTimer(long long) NtUserKillSystemTimer
 @ stdcall KillTimer(long long) NtUserKillTimer
 @ stdcall LoadAcceleratorsA(long str)
 @ stdcall LoadAcceleratorsW(long wstr)
@@ -1044,7 +1044,7 @@
 # @ stub SetFeatureReportResponse
 @ stdcall SetFocus(long) NtUserSetFocus
 # @ stub SetForegroundRedirectionForActivationObject
-@ stdcall SetForegroundWindow(long)
+@ stdcall SetForegroundWindow(long) NtUserSetForegroundWindow
 # @ stub SetFullscreenMagnifierOffsetsDWMUpdated
 @ stdcall SetGestureConfig(ptr long long ptr long)
 @ stdcall SetInternalWindowPos(long long ptr ptr) NtUserSetInternalWindowPos

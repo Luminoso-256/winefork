@@ -159,12 +159,7 @@ static void create_file_test(void)
 
     GetCurrentDirectoryW( MAX_PATH, path );
     pRtlDosPathNameToNtPathName_U( path, &nameW, NULL, NULL );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
 
     /* try various open modes and options on directories */
     status = pNtCreateFile( &dir, GENERIC_READ|GENERIC_WRITE, &attr, &io, NULL, 0,
@@ -253,12 +248,7 @@ static void create_file_test(void)
     pRtlFreeUnicodeString( &nameW );
 
     pRtlInitUnicodeString( &nameW, systemrootW );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = NULL;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
     dir = NULL;
     status = pNtCreateFile( &dir, FILE_APPEND_DATA, &attr, &io, NULL, FILE_ATTRIBUTE_NORMAL, 0,
                             FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0 );
@@ -348,12 +338,7 @@ static void open_file_test(void)
 
     len = GetWindowsDirectoryW( path, MAX_PATH );
     pRtlDosPathNameToNtPathName_U( path, &nameW, NULL, NULL );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = 0;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, 0, 0, NULL );
     status = pNtOpenFile( &dir, SYNCHRONIZE|FILE_LIST_DIRECTORY, &attr, &io,
                           FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT );
     ok( !status, "open %s failed %lx\n", wine_dbgstr_w(nameW.Buffer), status );
@@ -512,12 +497,7 @@ static void open_file_test(void)
     CloseHandle( root );
 
     pRtlDosPathNameToNtPathName_U( tmpfile, &nameW, NULL, NULL );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
     status = pNtOpenFile( &file, SYNCHRONIZE|FILE_LIST_DIRECTORY, &attr, &io,
                          FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_NONALERT );
     ok( !status, "open %s failed %lx\n", wine_dbgstr_w(nameW.Buffer), status );
@@ -604,12 +584,7 @@ static void delete_file_test(void)
 	return;
     }
 
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.ObjectName = &nameW;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
 
     /* test NtDeleteFile on an empty directory */
     ret = pNtDeleteFile(&attr);
@@ -751,7 +726,10 @@ static void read_file_test(void)
     CloseHandle( handle );
 
     if (!(handle = create_temp_file(FILE_FLAG_OVERLAPPED | FILE_FLAG_NO_BUFFERING)))
+    {
+        CloseHandle(event);
         return;
+    }
 
     apc_count = 0;
     offset.QuadPart = 0;
@@ -3287,13 +3265,7 @@ static NTSTATUS nt_get_file_attrs(const char *name, DWORD *attrs)
     if (!pRtlDosPathNameToNtPathName_U( nameW, &nt_name, NULL, NULL ))
         return STATUS_UNSUCCESSFUL;
 
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.ObjectName = &nt_name;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
+    InitializeObjectAttributes( &attr, &nt_name, OBJ_CASE_INSENSITIVE, 0, NULL );
     status = pNtQueryAttributesFile( &attr, &info );
     pRtlFreeUnicodeString( &nt_name );
 
@@ -4728,15 +4700,9 @@ static void test_file_mode(void)
     mountmgr_dev_name.Length = sizeof(mountmgr_devW);
     mountmgr_dev_name.MaximumLength = sizeof(mountmgr_devW);
 
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
     for (i = 0; i < ARRAY_SIZE(option_tests); i++)
     {
-        attr.ObjectName = option_tests[i].file_name;
+        InitializeObjectAttributes( &attr, option_tests[i].file_name, OBJ_CASE_INSENSITIVE, 0, NULL );
         access = SYNCHRONIZE;
 
         if (option_tests[i].file_name == &file_name)
@@ -4777,12 +4743,7 @@ static void test_query_volume_information_file(void)
 
     GetWindowsDirectoryW( path, MAX_PATH );
     pRtlDosPathNameToNtPathName_U( path, &nameW, NULL, NULL );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
 
     status = pNtOpenFile( &dir, SYNCHRONIZE|FILE_LIST_DIRECTORY, &attr, &io,
                           FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT );
@@ -4827,13 +4788,7 @@ static void test_query_attribute_information_file(void)
 
     GetWindowsDirectoryW( path, MAX_PATH );
     pRtlDosPathNameToNtPathName_U( path, &nameW, NULL, NULL );
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
     status = pNtOpenFile( &dir, SYNCHRONIZE|FILE_LIST_DIRECTORY, &attr, &io,
                           FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT );
     ok( !status, "open %s failed %lx\n", wine_dbgstr_w(nameW.Buffer), status );
@@ -4900,13 +4855,7 @@ static void test_NtCreateFile(void)
     GetTempFileNameW(path, fooW, 0, path);
     DeleteFileW(path);
     pRtlDosPathNameToNtPathName_U(path, &nameW, NULL, NULL);
-
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = NULL;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
 
     for (i = 0; i < ARRAY_SIZE(td); i++)
     {
@@ -4956,6 +4905,7 @@ static void test_NtCreateFile(void)
                             0, FILE_SHARE_READ|FILE_SHARE_WRITE, FILE_CREATE,
                             FILE_DIRECTORY_FILE, NULL, 0);
     ok( !status, "failed %s %lx\n", debugstr_w(nameW.Buffer), status );
+    pRtlFreeUnicodeString( &nameW );
     RemoveDirectoryW( path );
 }
 
@@ -5911,14 +5861,7 @@ static void test_file_readonly_access(void)
     GetTempFileNameW(path, fooW, 0, path);
     DeleteFileW(path);
     pRtlDosPathNameToNtPathName_U(path, &nameW, NULL, NULL);
-
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = NULL;
-    attr.ObjectName = &nameW;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
+    InitializeObjectAttributes( &attr, &nameW, OBJ_CASE_INSENSITIVE, 0, NULL );
     status = pNtCreateFile(&handle, FILE_GENERIC_WRITE, &attr, &io, NULL, FILE_ATTRIBUTE_READONLY, default_sharing,
                            FILE_CREATE, 0, NULL, 0);
     ok(status == STATUS_SUCCESS, "expected STATUS_SUCCESS, got %#lx.\n", status);

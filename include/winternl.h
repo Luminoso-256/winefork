@@ -4522,6 +4522,7 @@ NTSYSAPI NTSTATUS  WINAPI NtCreatePort(PHANDLE,POBJECT_ATTRIBUTES,ULONG,ULONG,PU
 NTSYSAPI NTSTATUS  WINAPI NtCreateProcess(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,HANDLE,BOOLEAN,HANDLE,HANDLE,HANDLE);
 NTSYSAPI NTSTATUS  WINAPI NtCreateProfile(PHANDLE,HANDLE,PVOID,ULONG,ULONG,PVOID,ULONG,KPROFILE_SOURCE,KAFFINITY);
 NTSYSAPI NTSTATUS  WINAPI NtCreateSection(HANDLE*,ACCESS_MASK,const OBJECT_ATTRIBUTES*,const LARGE_INTEGER*,ULONG,ULONG,HANDLE);
+NTSYSAPI NTSTATUS  WINAPI NtCreateSectionEx(HANDLE*,ACCESS_MASK,const OBJECT_ATTRIBUTES*,const LARGE_INTEGER*,ULONG,ULONG,HANDLE,MEM_EXTENDED_PARAMETER*,ULONG);
 NTSYSAPI NTSTATUS  WINAPI NtCreateSemaphore(PHANDLE,ACCESS_MASK,const OBJECT_ATTRIBUTES*,LONG,LONG);
 NTSYSAPI NTSTATUS  WINAPI NtCreateSymbolicLinkObject(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,PUNICODE_STRING);
 NTSYSAPI NTSTATUS  WINAPI NtCreateThread(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,HANDLE,PCLIENT_ID,PCONTEXT,PINITIAL_TEB,BOOLEAN);
@@ -5252,16 +5253,6 @@ NTSYSAPI NTSTATUS WINAPI wine_unix_to_nt_file_name( const char *name, WCHAR *buf
 /***********************************************************************
  * Inline functions
  */
-
-#define InitializeObjectAttributes(p,n,a,r,s) \
-    do { \
-        (p)->Length = sizeof(OBJECT_ATTRIBUTES); \
-        (p)->RootDirectory = r; \
-        (p)->Attributes = a; \
-        (p)->ObjectName = n; \
-        (p)->SecurityDescriptor = s; \
-        (p)->SecurityQualityOfService = NULL; \
-    } while (0)
 
 #define NtCurrentProcess() ((HANDLE)~(ULONG_PTR)0)
 #define NtCurrentThread()  ((HANDLE)~(ULONG_PTR)1)
