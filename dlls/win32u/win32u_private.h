@@ -219,6 +219,10 @@ struct object_lock
 #define __SHARED_READ_FENCE __atomic_thread_fence( __ATOMIC_ACQUIRE )
 #endif
 
+extern const shared_object_t *find_shared_session_object( object_id_t id, mem_size_t offset );
+extern void shared_object_acquire_seqlock( const shared_object_t *object, UINT64 *seq );
+extern BOOL shared_object_release_seqlock( const shared_object_t *object, UINT64 seq );
+
 /* Get shared session object's data pointer, must be called in a loop while STATUS_PENDING
  * is returned, lock must be initialized with OBJECT_LOCK_INIT.
  *
@@ -231,6 +235,7 @@ extern NTSTATUS get_shared_queue( struct object_lock *lock, const queue_shm_t **
 extern NTSTATUS get_shared_input( UINT tid, struct object_lock *lock, const input_shm_t **input_shm );
 
 extern BOOL is_virtual_desktop(void);
+extern BOOL is_service_process(void);
 
 /* window.c */
 struct tagWND;
@@ -274,7 +279,7 @@ extern BOOL screen_to_client( HWND hwnd, POINT *pt );
 extern LONG_PTR set_window_long( HWND hwnd, INT offset, UINT size, LONG_PTR newval,
                                  BOOL ansi );
 extern BOOL set_window_pos( WINDOWPOS *winpos, int parent_x, int parent_y );
-extern ULONG set_window_style( HWND hwnd, ULONG set_bits, ULONG clear_bits );
+extern UINT set_window_style_bits( HWND hwnd, UINT set_bits, UINT clear_bits );
 extern void update_window_state( HWND hwnd );
 extern HWND window_from_point( HWND hwnd, POINT pt, INT *hittest );
 extern HWND get_shell_window(void);

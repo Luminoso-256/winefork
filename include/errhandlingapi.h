@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Mohamad Al-Jaf
+ * Copyright 2025 Zhiyi Zhang for CodeWeavers
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -16,13 +16,17 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "dxcore.h"
-#include "wine/debug.h"
+#ifndef _ERRHANDLING_H_
+#define _ERRHANDLING_H_
 
-WINE_DEFAULT_DEBUG_CHANNEL(dxcore);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-HRESULT WINAPI DXCoreCreateAdapterFactory( REFIID riid, void **ppv )
-{
-    FIXME( "riid %s, ppv %p stub!\n", debugstr_guid(riid), ppv );
-    return E_NOINTERFACE;
+WINBASEAPI VOID WINAPI RaiseFailFastException(EXCEPTION_RECORD *record, CONTEXT *context, DWORD flags);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif /* _ERRHANDLING_H_ */

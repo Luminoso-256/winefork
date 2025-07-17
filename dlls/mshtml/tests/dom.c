@@ -319,6 +319,7 @@ static const IID * const text_iids[] = {
 static const IID * const attr_iids[] = {
     &IID_IHTMLDOMAttribute,
     &IID_IHTMLDOMAttribute2,
+    &IID_IHTMLDOMAttribute3,
     &IID_IDispatchEx,
     NULL
 };
@@ -6909,6 +6910,144 @@ static void test_default_selection(IHTMLDocument2 *doc)
     IHTMLTxtRange_Release(range);
 }
 
+static void test_doc_open(IHTMLDocument2 *doc)
+{
+    IHTMLElementCollection *col;
+    IHTMLDocument3 *doc3;
+    LONG len, index = 0;
+    IHTMLElement *elem;
+    IDispatch *disp;
+    SAFEARRAY *sa;
+    HRESULT hres;
+    VARIANT v;
+    BSTR bstr;
+
+    hres = IHTMLDocument2_QueryInterface(doc, &IID_IHTMLDocument3, (void**)&doc3);
+    ok(hres == S_OK, "QueryInterface(IID_IHTMLDocument3) failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    sa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    V_VT(&v) = VT_BSTR;
+    V_BSTR(&v) = SysAllocString(L"<p>test</p>");
+    hres = SafeArrayPutElement(sa, &index, &v);
+    ok(hres == S_OK, "SafeArrayPutElement failed: %08lx\n", hres);
+    VariantClear(&v);
+
+    disp = NULL;
+    hres = IHTMLDocument2_open(doc, NULL, v, v, v, &disp);
+    ok(hres == S_OK, "open failed: %08lx\n", hres);
+    ok(disp != NULL, "disp = NULL\n");
+    IDispatch_Release(disp);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    ok(elem == NULL, "elem != NULL\n");
+
+    hres = IHTMLDocument2_write(doc, sa);
+    ok(hres == S_OK, "write failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    hres = IHTMLDocument2_close(doc);
+    ok(hres == S_OK, "close failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    disp = NULL;
+    hres = IHTMLDocument2_open(doc, NULL, v, v, v, &disp);
+    ok(hres == S_OK, "open failed: %08lx\n", hres);
+    ok(disp != NULL, "disp = NULL\n");
+    IDispatch_Release(disp);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    ok(elem == NULL, "elem != NULL\n");
+
+    hres = IHTMLDocument2_write(doc, sa);
+    ok(hres == S_OK, "write failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    disp = NULL;
+    hres = IHTMLDocument2_open(doc, NULL, v, v, v, &disp);
+    ok(hres == S_OK, "open failed: %08lx\n", hres);
+    ok(disp != NULL, "disp = NULL\n");
+    IDispatch_Release(disp);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    ok(elem == NULL, "elem != NULL\n");
+
+    hres = IHTMLDocument2_write(doc, sa);
+    ok(hres == S_OK, "write failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    hres = IHTMLDocument2_clear(doc);
+    ok(hres == S_OK, "clear failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_get_documentElement(doc3, &elem);
+    ok(hres == S_OK, "get_documentElement failed: %08lx\n", hres);
+    test_elem_tag((IUnknown*)elem, L"HTML");
+    IHTMLElement_Release(elem);
+
+    hres = IHTMLDocument2_close(doc);
+    ok(hres == S_OK, "close failed: %08lx\n", hres);
+
+    bstr = SysAllocString(L"p");
+    hres = IHTMLDocument3_getElementsByTagName(doc3, bstr, &col);
+    ok(hres == S_OK, "getElementsByTagName failed: %08lx\n", hres);
+    hres = IHTMLElementCollection_get_length(col, &len);
+    ok(hres == S_OK, "get_length failed: %08lx\n", hres);
+    ok(len == 1, "len = %ld\n", len);
+    IHTMLElementCollection_Release(col);
+
+    V_VT(&v) = VT_BSTR;
+    V_BSTR(&v) = SysAllocString(L"<div>wine</div>");
+    hres = SafeArrayPutElement(sa, &index, &v);
+    ok(hres == S_OK, "SafeArrayPutElement failed: %08lx\n", hres);
+    VariantClear(&v);
+
+    hres = IHTMLDocument2_write(doc, sa);
+    ok(hres == S_OK, "write failed: %08lx\n", hres);
+
+    hres = IHTMLDocument3_getElementsByTagName(doc3, bstr, &col);
+    ok(hres == S_OK, "getElementsByTagName failed: %08lx\n", hres);
+    hres = IHTMLElementCollection_get_length(col, &len);
+    ok(hres == S_OK, "get_length failed: %08lx\n", hres);
+    ok(len == 0, "len = %ld\n", len);
+    IHTMLElementCollection_Release(col);
+    SysFreeString(bstr);
+
+    bstr = SysAllocString(L"div");
+    hres = IHTMLDocument3_getElementsByTagName(doc3, bstr, &col);
+    ok(hres == S_OK, "getElementsByTagName failed: %08lx\n", hres);
+    hres = IHTMLElementCollection_get_length(col, &len);
+    ok(hres == S_OK, "get_length failed: %08lx\n", hres);
+    ok(len == 1, "len = %ld\n", len);
+    IHTMLElementCollection_Release(col);
+    SysFreeString(bstr);
+
+    IHTMLDocument3_Release(doc3);
+    SafeArrayDestroy(sa);
+}
+
 static void test_doc_dir(IHTMLDocument2 *doc2)
 {
     IHTMLDocument3 *doc = get_doc3_iface(doc2);
@@ -12036,6 +12175,151 @@ static void test_quirks_mode(void)
     }
 }
 
+static void test_default_content_charset(void)
+{
+#define CHARSETS X(utf8) X(utf16) X(utf8_bom) X(utf16_bom)
+    enum {
+#define X(c) c,
+        CHARSETS
+#undef X
+    } doc_charset, rsrc_charset;
+    static const char *charsets[] = {
+#define X(c) #c,
+        CHARSETS
+#undef X
+    };
+    static const WCHAR *charsetsW[] = {
+#define X(c) L"" #c,
+        CHARSETS
+#undef X
+    };
+#undef CHARSETS
+    unsigned module_len, module_lenW;
+    IHTMLCSSStyleDeclaration *style;
+    char module_path[MAX_PATH * 3];
+    WCHAR module_pathW[MAX_PATH];
+    IPersistStreamInit *init;
+    IHTMLWindow7 *window7;
+    IHTMLWindow2 *window;
+    IHTMLDocument2 *doc;
+    IHTMLElement *body;
+    IHTMLDOMNode *node;
+    IStream *stream;
+    DISPID dispid;
+    HRESULT hres;
+    VARIANT var;
+    HGLOBAL mem;
+    SIZE_T size;
+    void *buf;
+    BSTR bstr;
+    MSG msg;
+
+    module_lenW = GetModuleFileNameW(NULL, module_pathW, ARRAY_SIZE(module_pathW));
+    module_len = WideCharToMultiByte(CP_UTF8, 0, module_pathW, -1, module_path, ARRAY_SIZE(module_path), NULL, NULL);
+
+    for(doc_charset = utf8; doc_charset <= utf16; doc_charset++) {
+        for(rsrc_charset = utf8; rsrc_charset < ARRAY_SIZE(charsets); rsrc_charset++) {
+            notif_doc = doc = create_document();
+            if(!doc)
+                return;
+            doc_complete = FALSE;
+
+            buf = malloc((128 + (doc_charset == utf16 ? module_lenW : module_len)) * (doc_charset == utf16 ? sizeof(WCHAR) : 1));
+            if(doc_charset == utf16)
+                size = wsprintfW(buf, L"<!DOCTYPE html>\n<html><head><link href=\"res://%s/%s.css\" rel=\"stylesheet\"></head><body></body></html>", module_pathW, charsetsW[rsrc_charset]) * sizeof(WCHAR);
+            else
+                size = sprintf(buf, "<!DOCTYPE html>\n<html><head><link href=\"res://%s/%s.css\" rel=\"stylesheet\"></head><body></body></html>", module_path, charsets[rsrc_charset]);
+            mem = GlobalAlloc(0, size);
+            memcpy(mem, buf, size);
+            free(buf);
+
+            hres = CreateStreamOnHGlobal(mem, TRUE, &stream);
+            ok(hres == S_OK, "Failed to create stream: %08lx.\n", hres);
+            hres = IHTMLDocument2_QueryInterface(doc, &IID_IPersistStreamInit, (void**)&init);
+            ok(hres == S_OK, "Failed to get IPersistStreamInit: %08lx.\n", hres);
+            IPersistStreamInit_Load(init, stream);
+            IPersistStreamInit_Release(init);
+            IStream_Release(stream);
+
+            set_client_site(doc, TRUE);
+            do_advise((IUnknown*)doc, &IID_IPropertyNotifySink, (IUnknown*)&PropertyNotifySink);
+
+            while(!doc_complete && GetMessageW(&msg, NULL, 0, 0)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+
+            hres = IHTMLDocument2_get_parentWindow(doc, &window);
+            ok(hres == S_OK, "get_parentWindow failed: %08lx\n", hres);
+
+            hres = IHTMLWindow2_QueryInterface(window, &IID_IHTMLWindow7, (void**)&window7);
+            ok(hres == S_OK, "Could not get IHTMLWindow7: %08lx\n", hres);
+            IHTMLWindow2_Release(window);
+
+            hres = IHTMLDocument2_get_body(doc, &body);
+            ok(hres == S_OK, "Could not get body: %08lx\n", hres);
+
+            hres = IHTMLElement_QueryInterface(body, &IID_IHTMLDOMNode, (void**)&node);
+            ok(hres == S_OK, "Could not get IHTMLDOMNode: %08lx\n", hres);
+            IHTMLElement_Release(body);
+
+            hres = IHTMLWindow7_getComputedStyle(window7, node, NULL, &style);
+            ok(hres == S_OK, "getComputedStyle failed: %08lx\n", hres);
+            IHTMLWindow7_Release(window7);
+            IHTMLDOMNode_Release(node);
+
+            hres = IHTMLCSSStyleDeclaration_get_backgroundColor(style, &var);
+            ok(hres == S_OK, "get_backgroundColor failed: %08lx\n", hres);
+            ok(V_VT(&var) == VT_BSTR, "backgroundColor VT = %d\n", V_VT(&var));
+            todo_wine_if((doc_charset == utf8 && rsrc_charset == utf16) || (doc_charset == utf16 && rsrc_charset == utf8))
+            ok(!wcscmp(V_BSTR(&var), L"rgb(222, 173, 184)"), "[%s:%s] backgroundColor = %s\n", charsets[doc_charset], charsets[rsrc_charset], wine_dbgstr_w(V_BSTR(&var)));
+            IHTMLCSSStyleDeclaration_Release(style);
+            VariantClear(&var);
+
+            set_client_site(doc, FALSE);
+            IHTMLDocument2_Release(doc);
+
+            notif_doc = doc = create_document();
+            if(!doc)
+                return;
+            doc_complete = FALSE;
+
+            buf = malloc((128 + (doc_charset == utf16 ? module_lenW : module_len)) * (doc_charset == utf16 ? sizeof(WCHAR) : 1));
+            if(doc_charset == utf16)
+                size = wsprintfW(buf, L"<!DOCTYPE html>\n<html><head><script type=\"text/javascript\" src=\"res://%s/%s.js\"></script></head><body></body></html>", module_pathW, charsetsW[rsrc_charset]) * sizeof(WCHAR);
+            else
+                size = sprintf(buf, "<!DOCTYPE html>\n<html><head><script type=\"text/javascript\" src=\"res://%s/%s.js\"></script></head><body></body></html>", module_path, charsets[rsrc_charset]);
+            mem = GlobalAlloc(0, size);
+            memcpy(mem, buf, size);
+            free(buf);
+
+            hres = CreateStreamOnHGlobal(mem, TRUE, &stream);
+            ok(hres == S_OK, "Failed to create stream: %08lx.\n", hres);
+            hres = IHTMLDocument2_QueryInterface(doc, &IID_IPersistStreamInit, (void**)&init);
+            ok(hres == S_OK, "Failed to get IPersistStreamInit: %08lx.\n", hres);
+            IPersistStreamInit_Load(init, stream);
+            IPersistStreamInit_Release(init);
+            IStream_Release(stream);
+
+            set_client_site(doc, TRUE);
+            do_advise((IUnknown*)doc, &IID_IPropertyNotifySink, (IUnknown*)&PropertyNotifySink);
+
+            while(!doc_complete && GetMessageW(&msg, NULL, 0, 0)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+
+            bstr = SysAllocString(L"wineTestProp");
+            hres = IHTMLDocument2_GetIDsOfNames(doc, &IID_NULL, &bstr, 1, 0, &dispid);
+            ok(hres == S_OK, "[%s:%s] GetIDsOfNames(wineTestProp) returned: %08lx\n", charsets[doc_charset], charsets[rsrc_charset], hres);
+            SysFreeString(bstr);
+
+            set_client_site(doc, FALSE);
+            IHTMLDocument2_Release(doc);
+        }
+    }
+}
+
 static void test_document_mode_lock(void)
 {
     IHTMLOptionElementFactory *option, *option2;
@@ -12380,6 +12664,7 @@ START_TEST(dom)
 
     run_domtest(doc_str1, test_doc_elem);
     run_domtest(doc_str1, test_get_set_attr);
+    run_domtest(doc_blank, test_doc_open);
     run_domtest(doc_blank, test_range);
     if (winetest_interactive || ! is_ie_hardened()) {
         run_domtest(elem_test_str, test_elems);
@@ -12388,6 +12673,7 @@ START_TEST(dom)
         run_domtest(doc_blank, test_about_blank_storage);
         if(is_ie9plus) {
             compat_mode = COMPAT_IE9;
+            run_domtest(doc_blank_ie9, test_doc_open);
             run_domtest(doc_blank_ie9, test_dom_elements);
             run_domtest(doc_blank_ie9, test_about_blank_storage);
             compat_mode = COMPAT_NONE;
@@ -12413,6 +12699,7 @@ START_TEST(dom)
     }
 
     test_quirks_mode();
+    test_default_content_charset();
     test_document_mode_lock();
     test_document_mode_after_initnew();
     test_threads();

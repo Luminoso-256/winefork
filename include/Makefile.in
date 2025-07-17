@@ -12,6 +12,7 @@ SOURCES = \
 	adshlp.h \
 	advpub.h \
 	af_irda.h \
+	afunix.h \
 	amaudio.h \
 	amsi.idl \
 	amstream.idl \
@@ -58,8 +59,10 @@ SOURCES = \
 	bits5_0.idl \
 	bitsmsg.h \
 	bluetoothapis.h \
+	bluetoothleapis.h \
 	bthdef.h \
 	bthioctl.h \
+	bthledef.h \
 	bthsdpdef.h \
 	cderr.h \
 	cdosys.idl \
@@ -185,6 +188,7 @@ SOURCES = \
 	dbinit.idl \
 	dbprop.idl \
 	dbs.idl \
+	dbsrst.idl \
 	dbt.h \
 	dciddi.h \
 	dciman.h \
@@ -195,6 +199,7 @@ SOURCES = \
 	dde.h \
 	dde.rh \
 	ddeml.h \
+	ddk/bthguid.h \
 	ddk/compstui.h \
 	ddk/csq.h \
 	ddk/d3dkmthk.h \
@@ -229,10 +234,13 @@ SOURCES = \
 	ddstream.idl \
 	delayloadhandler.h \
 	devenum.idl \
+	devfiltertypes.h \
 	devguid.h \
 	devicetopology.idl \
 	devpkey.h \
 	devpropdef.h \
+	devquery.h \
+	devquerydef.h \
 	dhcpcsdk.h \
 	dhtmldid.h \
 	dhtmled.idl \
@@ -310,6 +318,8 @@ SOURCES = \
 	dxvahd.idl \
 	dyngraph.idl \
 	endpointvolume.idl \
+	errhandlingapi.h \
+	errlup.idl \
 	errorrep.h \
 	errors.h \
 	errrec.idl \
@@ -856,7 +866,9 @@ SOURCES = \
 	windows.applicationmodel.idl \
 	windows.data.json.idl \
 	windows.data.xml.dom.idl \
+	windows.devices.bluetooth.genericattributeprofile.idl \
 	windows.devices.bluetooth.idl \
+	windows.devices.bluetooth.rfcomm.idl \
 	windows.devices.enumeration.idl \
 	windows.devices.geolocation.idl \
 	windows.devices.haptics.idl \
@@ -894,6 +906,7 @@ SOURCES = \
 	windows.media.speechsynthesis.idl \
 	windows.networking.connectivity.idl \
 	windows.networking.idl \
+	windows.networking.sockets.idl \
 	windows.perception.spatial.idl \
 	windows.perception.spatial.surfaces.idl \
 	windows.security.authentication.onlineid.idl \
@@ -920,6 +933,7 @@ SOURCES = \
 	windows.ui.idl \
 	windows.ui.input.idl \
 	windows.ui.notifications.idl \
+	windows.ui.viewmanagement.core.idl \
 	windows.ui.viewmanagement.idl \
 	windows.ui.xaml.hosting.desktopwindowxamlsource.idl \
 	windows.ui.xaml.idl \

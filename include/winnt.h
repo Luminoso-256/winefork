@@ -494,21 +494,19 @@ typedef ULONG           UCSCHAR;
 #ifndef _ULONGLONG_
 # define _ULONGLONG_
 # ifdef _MSC_VER
-typedef signed __int64   LONGLONG,  *PLONGLONG;
-typedef unsigned __int64 ULONGLONG, *PULONGLONG;
+typedef signed __int64   LONGLONG;
+typedef unsigned __int64 ULONGLONG;
 # else
-typedef signed __int64   DECLSPEC_ALIGN(8) LONGLONG,   *PLONGLONG;
-typedef unsigned __int64 DECLSPEC_ALIGN(8) ULONGLONG,  *PULONGLONG;
+typedef signed __int64   DECLSPEC_ALIGN(8) LONGLONG;
+typedef unsigned __int64 DECLSPEC_ALIGN(8) ULONGLONG;
 # endif
+typedef LONGLONG *PLONGLONG;
+typedef ULONGLONG *PULONGLONG;
 #endif
 
 #ifndef _DWORDLONG_
 # define _DWORDLONG_
-# ifdef _MSC_VER
 typedef ULONGLONG DWORDLONG, *PDWORDLONG;
-# else
-typedef ULONGLONG   DECLSPEC_ALIGN(8) DWORDLONG,   *PDWORDLONG;
-# endif
 #endif
 
 /* ANSI string types */
@@ -1486,15 +1484,25 @@ typedef struct _XSTATE_CONFIGURATION
     ULONG64 EnabledFeatures;
     ULONG64 EnabledVolatileFeatures;
     ULONG Size;
-    ULONG OptimizedSave:1;
-    ULONG CompactionEnabled:1;
+    union
+    {
+        ULONG ControlFlags;
+        struct
+        {
+            ULONG OptimizedSave : 1;
+            ULONG CompactionEnabled : 1;
+            ULONG ExtendedFeatureDisable : 1;
+        };
+    };
     XSTATE_FEATURE Features[MAXIMUM_XSTATE_FEATURES];
-
     ULONG64 EnabledSupervisorFeatures;
     ULONG64 AlignedFeatures;
     ULONG AllFeatureSize;
     ULONG AllFeatures[MAXIMUM_XSTATE_FEATURES];
     ULONG64 EnabledUserVisibleSupervisorFeatures;
+    ULONG64 ExtendedFeatureDisableFeatures;
+    ULONG AllNonLargeFeatureSize;
+    ULONG Spare;
 } XSTATE_CONFIGURATION, *PXSTATE_CONFIGURATION;
 
 typedef struct _XSAVE_AREA_HEADER
@@ -6221,12 +6229,12 @@ NTSYSAPI WORD WINAPI RtlCaptureStackBackTrace(DWORD,DWORD,void**,DWORD*);
 
 #pragma pack(push,8)
 typedef struct _IO_COUNTERS {
-    ULONGLONG DECLSPEC_ALIGN(8) ReadOperationCount;
-    ULONGLONG DECLSPEC_ALIGN(8) WriteOperationCount;
-    ULONGLONG DECLSPEC_ALIGN(8) OtherOperationCount;
-    ULONGLONG DECLSPEC_ALIGN(8) ReadTransferCount;
-    ULONGLONG DECLSPEC_ALIGN(8) WriteTransferCount;
-    ULONGLONG DECLSPEC_ALIGN(8) OtherTransferCount;
+    ULONGLONG ReadOperationCount;
+    ULONGLONG WriteOperationCount;
+    ULONGLONG OtherOperationCount;
+    ULONGLONG ReadTransferCount;
+    ULONGLONG WriteTransferCount;
+    ULONGLONG OtherTransferCount;
 } IO_COUNTERS, *PIO_COUNTERS;
 #pragma pack(pop)
 

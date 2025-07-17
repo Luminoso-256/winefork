@@ -1815,6 +1815,9 @@ DWORD WINAPI DECLSPEC_HOTPATCH GetFinalPathNameByHandleW( HANDLE file, LPWSTR pa
     info->Name.Buffer[info->Name.Length / sizeof(WCHAR)] = 0;
     info->Name.Length -= 4 * sizeof(WCHAR);
     info->Name.Buffer += 4;
+    /* convert slashes in case of \??\unix path */
+    for (ULONG i = 0; i < info->Name.Length / sizeof(WCHAR); i++)
+        if (info->Name.Buffer[i] == '/') info->Name.Buffer[i] = '\\';
 
     /* FILE_NAME_OPENED is not supported yet, and would require Wineserver changes */
     if (flags & FILE_NAME_OPENED)
@@ -3379,7 +3382,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH ReOpenFile( HANDLE handle, DWORD access, DWORD s
     }
 
     status = NtCreateFile( &file, access | SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &io, NULL,
-                           0, sharing, FILE_OPEN, get_nt_file_options( attributes ), NULL, 0 );
+                           0, sharing, FILE_OPEN, FILE_NON_DIRECTORY_FILE | get_nt_file_options( attributes ), NULL, 0 );
     if (!set_ntstatus( status ))
         return INVALID_HANDLE_VALUE;
     return file;
@@ -3658,6 +3661,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetFileInformationByHandle( HANDLE file, FILE_INFO
         status = NtSetInformationFile( file, &io, info, size, FileIoPriorityHintInformation );
         break;
     case FileRenameInfo:
+    case FileRenameInfoEx:
         {
             FILE_RENAME_INFORMATION *rename_info;
             UNICODE_STRING nt_name;
@@ -3673,7 +3677,8 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetFileInformationByHandle( HANDLE file, FILE_INFO
                 memcpy( rename_info, info, sizeof(*rename_info) );
                 memcpy( rename_info->FileName, nt_name.Buffer, nt_name.Length + sizeof(WCHAR) );
                 rename_info->FileNameLength = nt_name.Length;
-                status = NtSetInformationFile( file, &io, rename_info, size, FileRenameInformation );
+                status = NtSetInformationFile( file, &io, rename_info, size,
+                        class == FileRenameInfo ? FileRenameInformation : FileRenameInformationEx );
                 HeapFree( GetProcessHeap(), 0, rename_info );
             }
             RtlFreeUnicodeString( &nt_name );

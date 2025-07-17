@@ -37,6 +37,7 @@
 #include "winerror.h"
 #include "ntgdi_private.h"
 
+#include "wine/opengl_driver.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dc);
@@ -457,6 +458,7 @@ void DC_UpdateXforms( DC *dc )
  */
 static BOOL reset_dc_state( HDC hdc )
 {
+    struct opengl_drawable *drawable;
     DC *dc, *dcs, *next;
 
     if (!(dc = get_dc_ptr( hdc ))) return FALSE;
@@ -485,7 +487,12 @@ static BOOL reset_dc_state( HDC hdc )
     }
     dc->saved_dc = NULL;
     dc->attr->save_level = 0;
+
+    drawable = dc->opengl_drawable;
+    dc->opengl_drawable = NULL;
     release_dc_ptr( dc );
+
+    if (drawable) opengl_drawable_release( drawable );
     return TRUE;
 }
 
@@ -1085,6 +1092,19 @@ BOOL WINAPI NtGdiSetBrushOrg( HDC hdc, INT x, INT y, POINT *oldorg )
     dc->attr->brush_org.y = y;
     release_dc_ptr( dc );
     return TRUE;
+}
+
+
+BOOL offset_viewport_org( HDC hdc, INT x, INT y, POINT *point )
+{
+    DC *dc;
+
+    if (!(dc = get_dc_ptr( hdc ))) return FALSE;
+    if (point) *point = dc->attr->vport_org;
+    dc->attr->vport_org.x += x;
+    dc->attr->vport_org.y += y;
+    release_dc_ptr( dc );
+    return NtGdiComputeXformCoefficients( hdc );
 }
 
 

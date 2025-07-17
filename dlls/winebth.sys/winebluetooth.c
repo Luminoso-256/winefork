@@ -177,6 +177,27 @@ NTSTATUS winebluetooth_auth_send_response( winebluetooth_device_t device, BLUETO
     return UNIX_BLUETOOTH_CALL( bluetooth_auth_send_response, &args );
 }
 
+NTSTATUS winebluetooth_device_start_pairing( winebluetooth_device_t device, IRP *irp )
+{
+    struct bluetooth_device_start_pairing_params args = {0};
+
+    TRACE( "(%p)\n", (void *)device.handle );
+
+    args.device = device.handle;
+    args.irp = irp;
+    return UNIX_BLUETOOTH_CALL( bluetooth_device_start_pairing, &args );
+}
+
+void winebluetooth_gatt_service_free( winebluetooth_gatt_service_t service )
+{
+    struct bluetooth_gatt_service_free_params args = {0};
+
+    TRACE( "(%p)\n", (void *)service.handle );
+
+    args.service = service.handle;
+    UNIX_BLUETOOTH_CALL( bluetooth_gatt_service_free, &args );
+}
+
 NTSTATUS winebluetooth_get_event( struct winebluetooth_event *result )
 {
     struct bluetooth_get_event_params params = {0};
