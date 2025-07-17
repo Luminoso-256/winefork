@@ -5451,8 +5451,6 @@ const char *debug_d3dstate(uint32_t state)
         return "STATE_VIEWPORT";
     if (STATE_IS_SCISSORRECT(state))
         return "STATE_SCISSORRECT";
-    if (STATE_IS_CLIPPLANE(state))
-        return wine_dbg_sprintf("STATE_CLIPPLANE(%#x)", state - STATE_CLIPPLANE(0));
     if (STATE_IS_RASTERIZER(state))
         return "STATE_RASTERIZER";
     if (STATE_IS_DEPTH_BOUNDS(state))
@@ -5784,46 +5782,6 @@ void get_pointsize_minmax(const struct wined3d_context *context, const struct wi
 
     *out_min = min.f;
     *out_max = max.f;
-}
-
-void get_fog_start_end(const struct wined3d_context *context, const struct wined3d_state *state,
-        float *start, float *end)
-{
-    union
-    {
-        DWORD d;
-        float f;
-    } tmpvalue;
-
-    switch (context->fog_source)
-    {
-        case FOGSOURCE_VS:
-            *start = 1.0f;
-            *end = 0.0f;
-            break;
-
-        case FOGSOURCE_FFP:
-            tmpvalue.d = state->render_states[WINED3D_RS_FOGSTART];
-            *start = tmpvalue.f;
-            tmpvalue.d = state->render_states[WINED3D_RS_FOGEND];
-            *end = tmpvalue.f;
-            /* Special handling for fog_start == fog_end. In d3d with vertex
-             * fog, everything is fogged. With table fog, everything with
-             * fog_coord < fog_start is unfogged, and fog_coord > fog_start
-             * is fogged. Windows drivers disagree when fog_coord == fog_start. */
-            if (state->render_states[WINED3D_RS_FOGTABLEMODE] == WINED3D_FOG_NONE && *start == *end)
-            {
-                *start = -INFINITY;
-                *end = 0.0f;
-            }
-            break;
-
-        default:
-            /* This should not happen, context->fog_source is set in wined3d, not the app. */
-            ERR("Unexpected fog coordinate source.\n");
-            *start = 0.0f;
-            *end = 0.0f;
-    }
 }
 
 static BOOL wined3d_get_primary_display(WCHAR *display)
@@ -6402,11 +6360,11 @@ void wined3d_ffp_get_fs_settings(const struct wined3d_state *state,
     for (; i < WINED3D_MAX_FFP_TEXTURES; ++i)
         memset(&settings->op[i], 0xff, sizeof(settings->op[i]));
 
-    if (!state->render_states[WINED3D_RS_FOGENABLE])
+    if (!state->extra_ps_args.fog_enable)
     {
         settings->fog = WINED3D_FFP_PS_FOG_OFF;
     }
-    else if (state->render_states[WINED3D_RS_FOGTABLEMODE] == WINED3D_FOG_NONE)
+    else if (state->extra_ps_args.fog_mode == WINED3D_FOG_NONE)
     {
         if (use_vs(state) || state->vertex_declaration->position_transformed)
         {
@@ -6431,7 +6389,7 @@ void wined3d_ffp_get_fs_settings(const struct wined3d_state *state,
     }
     else
     {
-        switch (state->render_states[WINED3D_RS_FOGTABLEMODE])
+        switch (state->extra_ps_args.fog_mode)
         {
             case WINED3D_FOG_LINEAR:
                 settings->fog = WINED3D_FFP_PS_FOG_LINEAR;
@@ -6441,6 +6399,9 @@ void wined3d_ffp_get_fs_settings(const struct wined3d_state *state,
                 break;
             case WINED3D_FOG_EXP2:
                 settings->fog = WINED3D_FFP_PS_FOG_EXP2;
+                break;
+            case WINED3D_FOG_NONE:
+                /* unreachable */
                 break;
         }
     }
@@ -6486,18 +6447,16 @@ void wined3d_ffp_get_fs_settings(const struct wined3d_state *state,
         settings->texcoords_initialized = wined3d_mask_from_size(WINED3D_MAX_FFP_TEXTURES);
     }
 
-    settings->pointsprite = state->render_states[WINED3D_RS_POINTSPRITEENABLE]
+    settings->pointsprite = state->extra_ps_args.point_sprite
             && state->primitive_type == WINED3D_PT_POINTLIST;
 
     if (d3d_info->ffp_alpha_test)
         settings->alpha_test_func = WINED3D_CMP_ALWAYS - 1;
     else
-        settings->alpha_test_func = (state->render_states[WINED3D_RS_ALPHATESTENABLE]
-                ? wined3d_sanitize_cmp_func(state->render_states[WINED3D_RS_ALPHAFUNC])
-                : WINED3D_CMP_ALWAYS) - 1;
+        settings->alpha_test_func = state->extra_ps_args.alpha_func - 1;
 
     if (d3d_info->emulated_flatshading)
-        settings->flatshading = state->render_states[WINED3D_RS_SHADEMODE] == WINED3D_SHADE_FLAT;
+        settings->flatshading = state->extra_ps_args.flat_shading;
     else
         settings->flatshading = FALSE;
 }
@@ -6582,8 +6541,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
             break;
     }
 
-    settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
-            && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+    settings->clipping = !!state->extra_vs_args.clip_planes;
     settings->diffuse = vdecl->diffuse;
     settings->normal = vdecl->normal;
     settings->normalize = settings->normal && state->render_states[WINED3D_RS_NORMALIZENORMALS];

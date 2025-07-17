@@ -1,7 +1,61 @@
 MODULE  = windows.storage.dll
-IMPORTS = combase
+IMPORTS = $(APPX_PE_LIBS) $(XML2_PE_LIBS) shell32 user32 propsys combase ole32 advapi32 shlwapi rpcrt4 urlmon shcore
+EXTRAINCL = $(APPX_PE_CFLAGS) $(XML2_PE_CFLAGS)
+DELAYIMPORTS = oleaut32
 
 SOURCES = \
-	classes.idl \
 	main.c \
-	streams.c
+	error.c \
+	storage.rc \
+	WineCoreUAP/KnownFolders.c \
+	WineCoreUAP/KnownFoldersInternal.c \
+	WineCoreUAP/DownloadsFolder.c \
+	WineCoreUAP/DownloadsFolderInternal.c \
+	WineCoreUAP/FileIO.c \
+	WineCoreUAP/FileIOInternal.c \
+	WineCoreUAP/PathIO.c \
+	WineCoreUAP/PathIOInternal.c \
+	WineCoreUAP/AppInternalPaths.c \
+	WineCoreUAP/AppDataPaths.c \
+	WineCoreUAP/UserInternalPaths.c \
+	WineCoreUAP/UserDataPaths.c \
+	WineCoreUAP/StorageFolder.c \
+	WineCoreUAP/StorageFolderInternal.c \
+	WineCoreUAP/StorageItem.c \
+	WineCoreUAP/StorageItemInternal.c \
+	WineCoreUAP/StorageFile.c \
+	WineCoreUAP/StorageFileInternal.c \
+	WineCoreUAP/StorageProvider.c \
+	WineCoreUAP/StorageLibrary.c \
+	WineCoreUAP/SystemProperties.c \
+	WineCoreUAP/SystemDataPaths.c \
+	WineCoreUAP/SystemInternalPaths.c \
+	\
+	WineCoreUAP/AsyncAction/IAsyncAction.c \
+	\
+	WineCoreUAP/AsyncOperation/IWineAsync.c \
+	WineCoreUAP/AsyncOperation/IWineAsyncWithProgressUINT.c \
+	WineCoreUAP/AsyncOperation/UINT32Async.c \
+	WineCoreUAP/AsyncOperation/UINT32AsyncWithProgress.c \
+	WineCoreUAP/AsyncOperation/HSTRINGAsync.c \
+	\
+	WineCoreUAP/Vector/IWineVector.c \
+	WineCoreUAP/Vector/HSTRINGVector.c \
+	\
+	WineCoreUAP/Map/IWineMap.c \
+	\
+	WineCoreUAP/FileProperties/BasicProperties.c \
+	WineCoreUAP/FileProperties/StorageItemContentProperties.c \
+	WineCoreUAP/FileProperties/StorageItemExtraProperties.c \
+	WineCoreUAP/FileProperties/StorageItemExtraPropertiesInternal.c \
+	\
+	WineCoreUAP/FileProperties/AsyncOperation/BasicPropertiesAsync.c \
+	\
+	WineCoreUAP/Search/QueryOptions.c \
+	WineCoreUAP/Search/StorageQueryResults.c \
+	WineCoreUAP/Search/StorageQueryResultsInternal.c \
+	WineCoreUAP/Search/StorageFolderQueryOperations.c \
+	WineCoreUAP/Search/StorageFolderQueryOperationsInternal.c \
+	provider.idl \
+	classes.idl \
+	classes.search.idl \

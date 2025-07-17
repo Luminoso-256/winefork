@@ -5,6 +5,20 @@ IMPORTS   = combase
 SOURCES = \
 	buffer.c \
 	classes.idl \
+	provider.idl \
 	main.c \
-	storage.c \
-	wintypes_private.idl
+	wintypes_private.idl \
+	\
+	WineCoreUAP/Map/IWineMap.c \
+	\
+	WineCoreUAP/Vector/IWineVector.c \
+	\
+	WineCoreUAP/Foundation/Collections/PropertySet.c \
+	\
+	WineCoreUAP/AsyncOperation/IWineAsync.c \
+	WineCoreUAP/AsyncOperation/UINT32Async.c \
+	WineCoreUAP/Storage/Streams/Buffer.c \
+	WineCoreUAP/Storage/Streams/BufferByteAccess.c \
+	WineCoreUAP/Storage/Streams/BufferInternal.c \
+	WineCoreUAP/Storage/Streams/DataReader.c \
+	WineCoreUAP/Storage/Streams/DataWriter.c

@@ -178,7 +178,7 @@ enum complex_fixup
     COMPLEX_FIXUP_YUV  = 6,
 };
 
-#include <pshpack2.h>
+#pragma pack(push,2)
 struct color_fixup_desc
 {
     unsigned short x_sign_fixup : 1;
@@ -190,7 +190,7 @@ struct color_fixup_desc
     unsigned short w_sign_fixup : 1;
     unsigned short w_source : 3;
 };
-#include <poppack.h>
+#pragma pack(pop)
 
 struct fragment_caps
 {
@@ -1752,10 +1752,7 @@ void dispatch_compute(struct wined3d_device *device, const struct wined3d_state 
 #define STATE_SCISSORRECT (STATE_VIEWPORT + 1)
 #define STATE_IS_SCISSORRECT(a) ((a) == STATE_SCISSORRECT)
 
-#define STATE_CLIPPLANE(a) (STATE_SCISSORRECT + 1 + (a))
-#define STATE_IS_CLIPPLANE(a) ((a) >= STATE_CLIPPLANE(0) && (a) <= STATE_CLIPPLANE(WINED3D_MAX_CLIP_DISTANCES - 1))
-
-#define STATE_RASTERIZER (STATE_CLIPPLANE(WINED3D_MAX_CLIP_DISTANCES))
+#define STATE_RASTERIZER (STATE_SCISSORRECT + 1)
 #define STATE_IS_RASTERIZER(a) ((a) == STATE_RASTERIZER)
 
 #define STATE_DEPTH_BOUNDS (STATE_RASTERIZER + 1)
@@ -1810,11 +1807,6 @@ void dispatch_compute(struct wined3d_device *device, const struct wined3d_state 
     ((a) != WINED3D_SHADER_TYPE_COMPUTE ? STATE_GRAPHICS_CONSTANT_BUFFER(a) : STATE_COMPUTE_CONSTANT_BUFFER)
 #define STATE_UNORDERED_ACCESS_VIEW_BINDING(a) ((a) == WINED3D_PIPELINE_GRAPHICS ? \
     STATE_GRAPHICS_UNORDERED_ACCESS_VIEW_BINDING : STATE_COMPUTE_UNORDERED_ACCESS_VIEW_BINDING)
-
-enum fogsource {
-    FOGSOURCE_FFP,
-    FOGSOURCE_VS,
-};
 
 /* Direct3D terminology with little modifications. We do not have an issued
  * state because only the driver knows about it, but we have a created state
@@ -1915,8 +1907,6 @@ struct wined3d_context
 
     DWORD constant_update_mask;
     DWORD numbered_array_mask;
-    enum fogsource fog_source;
-
 
     void *shader_backend_data;
 
@@ -2826,6 +2816,9 @@ struct wined3d_ffp_vs_constants
         struct wined3d_color ambient;
         struct wined3d_light_constants lights[8];
     } light;
+
+    /* States not used by the HLSL pipeline. */
+    struct wined3d_vec4 clip_planes[WINED3D_MAX_CLIP_DISTANCES];
 };
 
 struct wined3d_ffp_ps_constants
@@ -2848,7 +2841,13 @@ struct wined3d_ffp_ps_constants
 
     /* States not used by the HLSL pipeline. */
     float alpha_test_ref;
-    float padding[3]; /* to align to 16 bytes */
+    struct wined3d_ffp_fog_constants
+    {
+        float scale;
+        float end;
+        float density;
+        struct wined3d_color colour;
+    } fog;
 };
 
 /* Float/int/bool constants are bound to VKD3D_SHADER_D3DBC_*_CONSTANT_REGISTER
@@ -2868,6 +2867,29 @@ enum wined3d_push_constants
     WINED3D_PUSH_CONSTANTS_VS_FFP,
     WINED3D_PUSH_CONSTANTS_PS_FFP,
     WINED3D_PUSH_CONSTANTS_COUNT,
+};
+
+/* States part of the Direct3D 1-9 FFP, which are also used when
+ * using shaders, which are not implemented as uniforms.
+ * These eventually make their way into vs_compile_args / ps_compile_args, but
+ * those structs also include states other than the FFP states. */
+
+struct wined3d_extra_vs_args
+{
+    uint8_t clip_planes;
+};
+
+struct wined3d_extra_ps_args
+{
+    bool point_sprite;
+    bool flat_shading;
+    bool fog_enable;
+    bool srgb_write;
+    enum wined3d_fog_mode fog_mode;
+    enum wined3d_cmp_func alpha_func;
+    uint32_t texcoord_index[WINED3D_MAX_FFP_TEXTURES];
+    /* These flags are only relevant to 1.1-1.3, which only allow 4 textures. */
+    uint32_t texture_transform_flags[4];
 };
 
 struct wined3d_blend_state
@@ -2956,7 +2978,6 @@ struct wined3d_state
     uint32_t texture_states[WINED3D_MAX_FFP_TEXTURES][WINED3D_HIGHEST_TEXTURE_STATE + 1];
 
     struct wined3d_matrix transforms[WINED3D_HIGHEST_TRANSFORM_STATE + 1];
-    struct wined3d_vec4 clip_planes[WINED3D_MAX_CLIP_DISTANCES];
     struct wined3d_viewport viewports[WINED3D_MAX_VIEWPORTS];
     unsigned int viewport_count;
     RECT scissor_rects[WINED3D_MAX_VIEWPORTS];
@@ -2970,6 +2991,8 @@ struct wined3d_state
     uint32_t sample_mask;
     struct wined3d_depth_stencil_state *depth_stencil_state;
     unsigned int stencil_ref;
+    struct wined3d_extra_vs_args extra_vs_args;
+    struct wined3d_extra_ps_args extra_ps_args;
     bool depth_bounds_enable;
     float depth_bounds_min, depth_bounds_max;
     struct wined3d_rasterizer_state *rasterizer_state;
@@ -3701,6 +3724,8 @@ void wined3d_cs_emit_add_dirty_texture_region(struct wined3d_cs *cs,
         struct wined3d_texture *texture, unsigned int layer);
 void wined3d_cs_emit_clear(struct wined3d_cs *cs, DWORD rect_count, const RECT *rects,
         uint32_t flags, const struct wined3d_color *color, float depth, DWORD stencil);
+void wined3d_cs_emit_decode(struct wined3d_decoder *decoder, struct wined3d_decoder_output_view *output_view,
+        unsigned int bitstream_size, unsigned int slice_control_size);
 void wined3d_device_context_emit_clear_uav(struct wined3d_device_context *context,
         struct wined3d_unordered_access_view *view, const struct wined3d_uvec4 *clear_value, bool fp);
 void wined3d_cs_emit_preload_resource(struct wined3d_cs *cs, struct wined3d_resource *resource);
@@ -3748,8 +3773,6 @@ void wined3d_device_context_emit_reset_state(struct wined3d_device_context *cont
 void wined3d_device_context_emit_set_blend_state(struct wined3d_device_context *context,
         struct wined3d_blend_state *state, const struct wined3d_color *blend_factor,
         unsigned int sample_mask);
-void wined3d_device_context_emit_set_clip_plane(struct wined3d_device_context *context, unsigned int plane_idx,
-        const struct wined3d_vec4 *plane);
 void wined3d_device_context_emit_set_constant_buffers(struct wined3d_device_context *context,
         enum wined3d_shader_type type, unsigned int start_idx, unsigned int count,
         const struct wined3d_constant_buffer_state *buffers);
@@ -3757,6 +3780,10 @@ void wined3d_device_context_emit_set_depth_stencil_state(struct wined3d_device_c
         struct wined3d_depth_stencil_state *state, unsigned int stencil_ref);
 void wined3d_device_context_emit_set_depth_stencil_view(struct wined3d_device_context *context,
         struct wined3d_rendertarget_view *view);
+void wined3d_device_context_emit_set_extra_ps_args(struct wined3d_device_context *context,
+        const struct wined3d_extra_ps_args *args);
+void wined3d_device_context_emit_set_extra_vs_args(struct wined3d_device_context *context,
+        const struct wined3d_extra_vs_args *args);
 void wined3d_device_context_emit_set_feature_level(struct wined3d_device_context *context,
         enum wined3d_feature_level level);
 void wined3d_device_context_emit_set_index_buffer(struct wined3d_device_context *context, struct wined3d_buffer *buffer,
@@ -4465,8 +4492,6 @@ void get_texture_matrix(const struct wined3d_stateblock_state *state,
         const unsigned int tex, struct wined3d_matrix *mat);
 void get_pointsize_minmax(const struct wined3d_context *context, const struct wined3d_state *state,
         float *out_min, float *out_max);
-void get_fog_start_end(const struct wined3d_context *context, const struct wined3d_state *state,
-        float *start, float *end);
 
 struct wined3d_palette
 {
@@ -4486,6 +4511,9 @@ struct wined3d_decoder_ops
     HRESULT (*create)(struct wined3d_device *device,
             const struct wined3d_decoder_desc *desc, struct wined3d_decoder **decoder);
     void (*destroy)(struct wined3d_decoder *decoder);
+    void (*decode)(struct wined3d_context *context, struct wined3d_decoder *decoder,
+            struct wined3d_decoder_output_view *output_view,
+            unsigned int bitstream_size, unsigned int slice_control_size);
 };
 
 extern const struct wined3d_decoder_ops wined3d_decoder_vk_ops;
@@ -4691,7 +4719,7 @@ static inline BOOL needs_srgb_write(const struct wined3d_d3d_info *d3d_info,
         const struct wined3d_state *state, const struct wined3d_fb_state *fb)
 {
     return (!(d3d_info->wined3d_creation_flags & WINED3D_SRGB_READ_WRITE_CONTROL)
-            || state->render_states[WINED3D_RS_SRGBWRITEENABLE])
+            || state->extra_ps_args.srgb_write)
             && fb->render_targets[0] && fb->render_targets[0]->format_caps & WINED3D_FORMAT_CAP_SRGB_WRITE;
 }
 

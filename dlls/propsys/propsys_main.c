@@ -220,6 +220,10 @@ HRESULT WINAPI PSUnregisterPropertySchema(PCWSTR path)
     return E_NOTIMPL;
 }
 
+HRESULT WINAPI PSEnumeratePropertyDescriptions(PROPDESC_ENUMFILTER filterOn, REFIID riid, void **ppv){
+    return IPropertySystem_EnumeratePropertyDescriptions(&propsys,filterOn,riid,ppv);
+}
+
 HRESULT WINAPI PSGetPropertyDescription(REFPROPERTYKEY propkey, REFIID riid, void **ppv)
 {
     FIXME("%p, %p, %p\n", propkey, riid, ppv);

@@ -247,7 +247,7 @@ struct query_parser
     HRESULT hr;
 };
 
-static bool wincodecs_array_reserve(void **elements, size_t *capacity, size_t count, size_t size)
+bool wincodecs_array_reserve(void **elements, size_t *capacity, size_t count, size_t size)
 {
     size_t new_capacity, max_capacity;
     void *new_elements;
@@ -339,20 +339,6 @@ static bool parser_unescape(struct query_parser *parser)
     }
 
     return false;
-}
-
-static HRESULT init_propvar_from_string(const WCHAR *str, PROPVARIANT *var)
-{
-    size_t size = (wcslen(str) + 1) * sizeof(*str);
-    WCHAR *s;
-
-    if (!(s = CoTaskMemAlloc(size)))
-        return E_OUTOFMEMORY;
-    memcpy(s, str, size);
-
-    var->pwszVal = s;
-    var->vt = VT_LPWSTR;
-    return S_OK;
 }
 
 static void parse_query_name(struct query_parser *parser, PROPVARIANT *item)
@@ -528,8 +514,8 @@ static void parse_query_component(struct query_parser *parser)
 static HRESULT parser_set_top_level_metadata_handler(struct query_handler *query_handler,
         struct query_parser *parser)
 {
+    IWICMetadataReader *handler = NULL;
     struct query_component *comp;
-    IWICMetadataReader *handler;
     HRESULT hr;
     GUID format;
     UINT count, i, matched_index;

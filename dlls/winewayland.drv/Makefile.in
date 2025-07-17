@@ -2,6 +2,7 @@ MODULE = winewayland.drv
 UNIXLIB = winewayland.so
 UNIX_CFLAGS = $(EGL_CFLAGS) $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS) $(XKBCOMMON_CFLAGS) $(XKBREGISTRY_CFLAGS)
 UNIX_LIBS = -lwin32u $(WAYLAND_CLIENT_LIBS) $(WAYLAND_EGL_LIBS) $(XKBCOMMON_LIBS) $(XKBREGISTRY_LIBS) $(PTHREAD_LIBS) -lm
+IMPORTS = user32 win32u
 
 SOURCES = \
 	display.c \
@@ -25,4 +26,5 @@ SOURCES = \
 	window_surface.c \
 	wlr-data-control-unstable-v1.xml \
 	xdg-output-unstable-v1.xml \
-	xdg-shell.xml
+	xdg-shell.xml \
+	xdg-toplevel-icon-v1.xml

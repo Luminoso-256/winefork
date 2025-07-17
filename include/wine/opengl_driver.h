@@ -61,11 +61,12 @@ struct wgl_pixel_format
 #ifdef WINE_UNIX_LIB
 
 /* Wine internal opengl driver version, needs to be bumped upon opengl_funcs changes. */
-#define WINE_OPENGL_DRIVER_VERSION 30
+#define WINE_OPENGL_DRIVER_VERSION 31
 
 struct wgl_context;
 struct wgl_pbuffer;
 
+/* interface between opengl32 and win32u */
 struct opengl_funcs
 {
     BOOL       (*p_wglCopyContext)( struct wgl_context * hglrcSrc, struct wgl_context * hglrcDst, UINT mask );
@@ -107,6 +108,27 @@ struct opengl_funcs
     ALL_GL_FUNCS
     ALL_GL_EXT_FUNCS
 #undef USE_GL_FUNC
+};
+
+/* interface between win32u and the user drivers */
+struct opengl_driver_funcs
+{
+    void *(*p_get_proc_address)(const char *);
+    UINT (*p_init_pixel_formats)(UINT*);
+    BOOL (*p_describe_pixel_format)(int,struct wgl_pixel_format*);
+    const char *(*p_init_wgl_extensions)(void);
+    BOOL (*p_set_pixel_format)(HWND,int,int,BOOL);
+    BOOL (*p_swap_buffers)(void*,HWND,HDC,int);
+    BOOL (*p_context_create)(HDC,int,void*,const int*,void**);
+    BOOL (*p_context_destroy)(void*);
+    BOOL (*p_context_copy)(void*,void*,UINT);
+    BOOL (*p_context_share)(void*,void*);
+    BOOL (*p_context_flush)(void*,HWND,HDC,int,BOOL);
+    BOOL (*p_context_make_current)(HDC,HDC,void*);
+    BOOL (*p_pbuffer_create)(HDC,int,BOOL,GLenum,GLenum,GLint,GLsizei*,GLsizei*,void **);
+    BOOL (*p_pbuffer_destroy)(HDC,void*);
+    BOOL (*p_pbuffer_updated)(HDC,void*,GLenum,GLint);
+    UINT (*p_pbuffer_bind)(HDC,void*,GLenum);
 };
 
 #endif /* WINE_UNIX_LIB */

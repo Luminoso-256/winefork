@@ -1,7 +1,18 @@
 MODULE  = windows.storage.applicationdata.dll
-IMPORTS = combase
+IMPORTS = $(APPX_PE_LIBS) $(XML2_PE_LIBS) combase shlwapi advapi32
+EXTRAINCL = $(APPX_PE_CFLAGS) $(XML2_PE_CFLAGS)
 
 SOURCES = \
-	applicationdata.c \
+	WineCoreUAP/AsyncAction/IAsyncAction.c \
+	WineCoreUAP/AsyncOperation/IWineAsync.c \
+	WineCoreUAP/ApplicationData.c \
+	WineCoreUAP/ApplicationDataInternal.c \
+	WineCoreUAP/ApplicationDataContainer.c \
+	WineCoreUAP/ApplicationDataContainerInternal.c \
+	WineCoreUAP/SetVersion.c \
+	WineCoreUAP/Vector/IWineVector.c \
+	WineCoreUAP/Map/IWineMap.c \
+	\
 	classes.idl \
+	provider.idl \
 	main.c
