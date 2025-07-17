@@ -1980,7 +1980,7 @@ static void test_PropVariantToBSTR(void)
     ok(hr == S_OK, "PropVariantToBSTR returned %#lx.\n", hr);
     length = SysStringLen(bstr);
     ok(length == wcslen(test_bstr), "Unexpected length %u.\n", length);
-    ok(!wcscmp(bstr, test_bstr), "Unexpected bstr %s.", debugstr_wn(bstr, ARRAY_SIZE(test_bstr)));
+    ok(!wcscmp(bstr, test_bstr), "Unexpected bstr %s.", debugstr_wn(bstr, length));
     SysFreeString(bstr);
     PropVariantClear(&propvar);
 }
@@ -2457,7 +2457,7 @@ static void test_InitVariantFromFileTime(void)
     SYSTEMTIME st;
     VARIANT var;
     HRESULT hr;
-    double d;
+    DOUBLE d;
 
     VariantInit(&var);
     if (0) /* crash on Windows */

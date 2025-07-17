@@ -40,6 +40,7 @@
 #include "dbt.h"
 #include "initguid.h"
 #include "devguid.h"
+#include "devpkey.h"
 #include "ddk/hidclass.h"
 #include "ddk/hidsdi.h"
 #include "ddk/hidpi.h"
@@ -1444,8 +1445,11 @@ static void pump_messages(void)
 
 static void test_pnp_devices(void)
 {
+    static const GUID expect_container_id_guid = {0x12345678, 0x1234, 0x1234, {0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x91, 0x23}};
     static const char expect_hardware_id[] = "winetest_hardware\0winetest_hardware_1\0";
+    static const WCHAR expect_hardware_id_w[] = L"winetest_hardware\0winetest_hardware_1\0";
     static const char expect_compat_id[] = "winetest_compat\0winetest_compat_1\0";
+    static const WCHAR expect_compat_id_w[] = L"winetest_compat\0winetest_compat_1\0";
     static const WCHAR expect_container_id_w[] = L"{12345678-1234-1234-1234-123456789123}";
     static const char foobar[] = "foobar";
     static const char foo[] = "foo";
@@ -1453,9 +1457,12 @@ static void test_pnp_devices(void)
 
     char buffer[200];
     WCHAR buffer_w[200];
+    GUID buffer_guid = {0};
     SP_DEVICE_INTERFACE_DETAIL_DATA_A *iface_detail = (void *)buffer;
     SP_DEVICE_INTERFACE_DATA iface = {sizeof(iface)};
     SP_DEVINFO_DATA device = {sizeof(device)};
+    DEVPROP_BOOLEAN enabled = DEVPROP_FALSE;
+    DEVPROPTYPE prop_type = DEVPROP_TYPE_EMPTY;
     DEV_BROADCAST_DEVICEINTERFACE_A filter =
     {
         .dbcc_size = sizeof(filter),
@@ -1467,7 +1474,7 @@ static void test_pnp_devices(void)
         .lpfnWndProc = device_notify_proc,
     };
     HDEVNOTIFY notify_handle;
-    DWORD size, type, dword;
+    DWORD size = 0, type, dword;
     HANDLE bus, child, tmp;
     OBJECT_ATTRIBUTES attr;
     UNICODE_STRING string;
@@ -1509,6 +1516,13 @@ static void test_pnp_devices(void)
     ok(ret, "failed to get interface path, error %#lx\n", GetLastError());
     ok(!strcmp(iface_detail->DevicePath, "\\\\?\\root#winetest#0#{deadbeef-29ef-4538-a5fd-b69573a362c0}"),
             "wrong path %s\n", debugstr_a(iface_detail->DevicePath));
+
+    ret = SetupDiGetDeviceInterfacePropertyW(set, &iface, &DEVPKEY_DeviceInterface_Enabled, &prop_type,
+                                             (BYTE *)&enabled, sizeof(enabled), &size, 0);
+    ok(ret, "failed to get device interface property, got error %lu\n", GetLastError());
+    ok(prop_type == DEVPROP_TYPE_BOOLEAN, "got prop_type %#lx\n", prop_type);
+    ok(size == sizeof(enabled), "got size %lu\n", size);
+    ok(enabled == DEVPROP_TRUE, "got enabled %d\n", enabled);
 
     /* Create a device parameter for testing IoOpenDeviceRegistryKey */
     key = SetupDiCreateDevRegKeyA(set, &device, DICS_FLAG_GLOBAL, 0, DIREG_DEV, NULL, NULL);
@@ -1677,6 +1691,36 @@ static void test_pnp_devices(void)
         ok(!strcmp(buffer, "\\Device\\winetest_pnp_1"), "got PDO name %s\n", debugstr_a(buffer));
     }
 
+    prop_type = DEVPROP_TYPE_EMPTY;
+    size = 0;
+    memset(buffer_w, 0, sizeof(buffer_w));
+    ret = SetupDiGetDevicePropertyW(set, &device, &DEVPKEY_Device_HardwareIds, &prop_type, (BYTE *)buffer_w,
+                                    sizeof(buffer_w), &size, 0);
+    ok(ret, "failed to get device property, error %#lx\n", GetLastError());
+    ok(prop_type == DEVPROP_TYPE_STRING_LIST, "got type %#lx\n", prop_type);
+    ok(size == sizeof(expect_hardware_id_w), "got size %lu\n", size);
+    ok(!memcmp(buffer_w, expect_hardware_id_w, size), "got hardware IDs %s\n", debugstr_wn(buffer_w, size));
+
+    prop_type = DEVPROP_TYPE_EMPTY;
+    size = 0;
+    memset(buffer_w, 0, sizeof(buffer_w));
+    ret = SetupDiGetDevicePropertyW(set, &device, &DEVPKEY_Device_CompatibleIds, &prop_type, (BYTE *)buffer_w,
+                                    sizeof(buffer_w), &size, 0);
+    ok(ret, "failed to get device property, error %#lx\n", GetLastError());
+    ok(prop_type == DEVPROP_TYPE_STRING_LIST, "got type %#lx\n", prop_type);
+    ok(size == sizeof(expect_compat_id_w), "got size %lu\n", size);
+    ok(!memcmp(buffer_w, expect_compat_id_w, size), "got compatible IDs %s\n", debugstr_wn(buffer_w, size));
+
+    prop_type = DEVPROP_TYPE_EMPTY;
+    size = 0;
+    ret = SetupDiGetDevicePropertyW(set, &device, &DEVPKEY_Device_ContainerId, &prop_type, (BYTE *)&buffer_guid,
+                                    sizeof(buffer_guid), &size, 0);
+    ok(ret, "failed to get device property, error %#lx\n", GetLastError());
+    ok(prop_type == DEVPROP_TYPE_GUID, "got type %#lx\n", prop_type);
+    ok(size == sizeof(expect_container_id_guid), "got size %lu\n", size);
+    ok(IsEqualGUID(&buffer_guid, &expect_container_id_guid), "got container ID %s != %s\n",
+       debugstr_guid(&buffer_guid), debugstr_guid(&expect_container_id_guid));
+
     ret = SetupDiEnumDeviceInterfaces(set, NULL, &child_class, 0, &iface);
     ok(ret, "failed to get interface, error %#lx\n", GetLastError());
     ok(IsEqualGUID(&iface.InterfaceClassGuid, &child_class),
@@ -1688,6 +1732,16 @@ static void test_pnp_devices(void)
     ok(ret, "failed to get interface path, error %#lx\n", GetLastError());
     ok(!strcmp(iface_detail->DevicePath, "\\\\?\\wine#test#1#{deadbeef-29ef-4538-a5fd-b69573a362c2}"),
             "wrong path %s\n", debugstr_a(iface_detail->DevicePath));
+
+    prop_type = DEVPROP_TYPE_EMPTY;
+    size = 0;
+    enabled = DEVPROP_FALSE;
+    ret = SetupDiGetDeviceInterfacePropertyW(set, &iface, &DEVPKEY_DeviceInterface_Enabled, &prop_type,
+                                             (BYTE *)&enabled, sizeof(enabled), &size, 0);
+    ok(ret, "failed to get device interface property, got error %lu\n", GetLastError());
+    ok(prop_type == DEVPROP_TYPE_BOOLEAN, "got prop_type %#lx\n", prop_type);
+    ok(size == sizeof(enabled), "got size %lu\n", size);
+    ok(enabled == DEVPROP_TRUE, "got enabled %d\n", enabled);
 
     /* Create a device parameter for testing IoOpenDeviceRegistryKey */
     key = SetupDiCreateDevRegKeyA(set, &device, DICS_FLAG_GLOBAL, 0, DIREG_DEV, NULL, NULL);

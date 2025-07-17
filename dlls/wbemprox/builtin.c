@@ -135,6 +135,7 @@ static const struct column col_desktopmonitor[] =
 {
     { L"Name",                  CIM_STRING },
     { L"PixelsPerXLogicalInch", CIM_UINT32 },
+    { L"Status",                CIM_STRING },
 };
 static const struct column col_directory[] =
 {
@@ -400,7 +401,7 @@ static const struct column col_quickfixengineering[] =
 };
 static const struct column col_rawsmbiostables[] =
 {
-    { L"SMBiosData", CIM_UINT8|CIM_FLAG_ARRAY },
+    { L"SMBiosData", CIM_UINT8|CIM_FLAG_ARRAY|COL_FLAG_DYNAMIC },
 };
 static const struct column col_service[] =
 {
@@ -505,7 +506,7 @@ static const struct column col_videocontroller[] =
     { L"CurrentScanMode",             CIM_UINT16 },
     { L"CurrentVerticalResolution",   CIM_UINT32 },
     { L"Description",                 CIM_STRING|COL_FLAG_DYNAMIC },
-    { L"DeviceId",                    CIM_STRING|COL_FLAG_DYNAMIC|COL_FLAG_KEY },
+    { L"DeviceID",                    CIM_STRING|COL_FLAG_DYNAMIC|COL_FLAG_KEY },
     { L"DeviceSpecificPens",          CIM_UINT32 },
     { L"DitherType",                  CIM_UINT32 },
     { L"DriverDate",                  CIM_DATETIME|COL_FLAG_DYNAMIC },
@@ -652,6 +653,7 @@ struct record_desktopmonitor
 {
     const WCHAR *name;
     UINT32       pixelsperxlogicalinch;
+    const WCHAR *status;
 };
 struct record_directory
 {
@@ -1155,11 +1157,6 @@ static const struct record_physicalmedia data_physicalmedia[] =
     { L"WINEHDISK", L"\\\\.\\PHYSICALDRIVE0" }
 };
 
-static const struct record_rawsmbiostables data_rawsmbiostables[] =
-{
-    { 0 },
-};
-
 static const struct record_qualifier data_qualifier[] =
 {
     { L"__WIN32_PROCESS_GETOWNER_OUT", L"User", CIM_SINT32, FLAVOR_ID, L"ID", 0 },
@@ -1650,6 +1647,60 @@ static enum fill_status fill_bios( struct table *table, const struct expr *cond 
     rec->systembiosmajorversion = get_bios_system_bios_major_release( buf, len );
     rec->systembiosminorversion = get_bios_system_bios_minor_release( buf, len );
     rec->version                = L"WINE   - 1";
+    if (!match_row( table, row, cond, &status )) free_row_values( table, row );
+    else row++;
+
+    free( buf );
+
+    TRACE("created %u rows\n", row);
+    table->num_rows = row;
+    return status;
+}
+
+typedef struct
+{
+    BYTE    Used20CallingMethod;
+    BYTE    MajorVersion;
+    BYTE    MinorVersion;
+    BYTE    Revision;
+    DWORD   Length;
+    BYTE    SMBIOSTableData[];
+} RawSMBIOSData;
+
+static struct array *get_rawbiosdata( char *buf, UINT len )
+{
+    struct array *ret;
+    UINT8 *ptr;
+
+    if (!(ret = malloc( sizeof(*ret) ))) return NULL;
+    if (!(ptr = malloc( len )))
+    {
+        free( ret );
+        return NULL;
+    }
+    memcpy( ptr, buf, len );
+    ret->elem_size = sizeof(*ptr);
+    ret->count     = len;
+    ret->ptr       = ptr;
+    return ret;
+}
+
+static enum fill_status fill_rawbiosdata( struct table *table, const struct expr *cond )
+{
+    struct record_rawsmbiostables *rec;
+    enum fill_status status = FILL_STATUS_UNFILTERED;
+    UINT row = 0, len;
+    RawSMBIOSData *buf;
+
+    if (!resize_table( table, 1, sizeof(*rec) )) return FILL_STATUS_FAILED;
+
+    len = GetSystemFirmwareTable( RSMB, 0, NULL, 0 );
+    if (!(buf = malloc( len ))) return FILL_STATUS_FAILED;
+    GetSystemFirmwareTable( RSMB, 0, buf, len );
+
+    rec = (struct record_rawsmbiostables *)table->data;
+    rec->smbiosdata = get_rawbiosdata( (char *)buf + FIELD_OFFSET( RawSMBIOSData, SMBIOSTableData ), buf->Length );
+
     if (!match_row( table, row, cond, &status )) free_row_values( table, row );
     else row++;
 
@@ -2303,6 +2354,7 @@ static enum fill_status fill_desktopmonitor( struct table *table, const struct e
     rec = (struct record_desktopmonitor *)table->data;
     rec->name                  = L"Generic Non-PnP Monitor";
     rec->pixelsperxlogicalinch = get_pixelsperxlogicalinch();
+    rec->status                = L"OK";
 
     if (match_row( table, row, cond, &status )) row++;
 
@@ -2413,21 +2465,27 @@ done:
 static UINT64 get_freespace( const WCHAR *dir, UINT64 *disksize )
 {
     WCHAR root[] = L"\\\\.\\A:";
-    ULARGE_INTEGER free;
+    ULARGE_INTEGER free, total;
     DISK_GEOMETRY_EX info;
     HANDLE handle;
     DWORD bytes_returned;
 
     free.QuadPart = 512 * 1024 * 1024;
-    GetDiskFreeSpaceExW( dir, NULL, NULL, &free );
-
-    root[4] = dir[0];
-    handle = CreateFileW( root, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0 );
-    if (handle != INVALID_HANDLE_VALUE)
+    if (!GetDiskFreeSpaceExW( dir, NULL, &total, &free ))
     {
-        if (DeviceIoControl( handle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &info, sizeof(info), &bytes_returned, NULL ))
-            *disksize = info.DiskSize.QuadPart;
-        CloseHandle( handle );
+        *disksize = 0;
+        root[4] = dir[0];
+        handle = CreateFileW( root, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0 );
+        if (handle != INVALID_HANDLE_VALUE)
+        {
+            if (DeviceIoControl( handle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &info, sizeof(info), &bytes_returned, NULL ))
+                *disksize = info.DiskSize.QuadPart;
+            CloseHandle( handle );
+        }
+    }
+    else
+    {
+        *disksize = total.QuadPart;
     }
     return free.QuadPart;
 }
@@ -4703,7 +4761,7 @@ static struct table cimv2_builtin_classes[] =
 
 static struct table wmi_builtin_classes[] =
 {
-    { L"MSSMBios_RawSMBiosTables", C(col_rawsmbiostables), D(data_rawsmbiostables) },
+    { L"MSSMBios_RawSMBiosTables", C(col_rawsmbiostables), 0, 0, NULL, fill_rawbiosdata },
 };
 #undef C
 #undef D

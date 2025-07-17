@@ -70,6 +70,7 @@ static const struct object_ops ranges_ops =
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
+    default_get_sync,          /* get_sync */
     default_map_access,        /* map_access */
     default_get_sd,            /* get_sd */
     default_set_sd,            /* set_sd */
@@ -106,6 +107,7 @@ static const struct object_ops shared_map_ops =
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
+    default_get_sync,          /* get_sync */
     default_map_access,        /* map_access */
     default_get_sd,            /* get_sd */
     default_set_sd,            /* set_sd */
@@ -179,6 +181,7 @@ static const struct object_ops mapping_ops =
     NULL,                        /* satisfied */
     no_signal,                   /* signal */
     mapping_get_fd,              /* get_fd */
+    default_get_sync,            /* get_sync */
     default_map_access,          /* map_access */
     default_get_sd,              /* get_sd */
     default_set_sd,              /* set_sd */
@@ -1394,7 +1397,7 @@ volatile void *alloc_shared_object(void)
 
         if (!(block = find_free_session_block( size ))) return NULL;
         object = (struct session_object *)(block->data + block->used_size);
-        object->offset = (char *)&object->obj - block->data;
+        object->offset = block->offset + (char *)&object->obj - block->data;
         block->used_size += size;
     }
 
@@ -1448,14 +1451,10 @@ struct object *create_user_data_mapping( struct object *root, const struct unico
     void *ptr;
     struct mapping *mapping;
 
-    if (!(mapping = create_mapping( root, name, attr, sizeof(KSHARED_USER_DATA),
+    if (!(mapping = create_mapping( root, name, attr, sizeof(KUSER_SHARED_DATA),
                                     SEC_COMMIT, 0, FILE_READ_DATA | FILE_WRITE_DATA, sd ))) return NULL;
     ptr = mmap( NULL, mapping->size, PROT_WRITE, MAP_SHARED, get_unix_fd( mapping->fd ), 0 );
-    if (ptr != MAP_FAILED)
-    {
-        user_shared_data = ptr;
-        user_shared_data->SystemCall = 1;
-    }
+    if (ptr != MAP_FAILED) user_shared_data = ptr;
     return &mapping->obj;
 }
 
